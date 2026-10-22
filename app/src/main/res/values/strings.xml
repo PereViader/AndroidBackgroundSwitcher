@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Background Switcher</string>
+    <string name="import_to_background_switcher">Add to Background Switcher</string>
+    <string name="live_wallpaper_name">Background Switcher Live</string>
+    <string name="live_wallpaper_description">Cycles through your selected photo albums with smooth transitions and centered cover fit.</string>
+</resources>
