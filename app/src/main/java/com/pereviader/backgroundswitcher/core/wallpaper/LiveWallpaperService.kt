@@ -101,12 +101,7 @@ class LiveWallpaperService : WallpaperService() {
                 if (canvas != null) {
                     val bitmap = currentBitmap
                     if (bitmap != null && !bitmap.isRecycled) {
-                        val coverBitmap = CenterCropEngine.createCoverBitmap(
-                            source = bitmap,
-                            targetWidth = surfaceWidth,
-                            targetHeight = surfaceHeight
-                        )
-                        canvas.drawBitmap(coverBitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+                        canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
                     } else {
                         canvas.drawColor(Color.DKGRAY)
                     }

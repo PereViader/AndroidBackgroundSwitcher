@@ -9,21 +9,25 @@ object CenterCropEngine {
 
     /**
      * Transforms a source [Bitmap] to an exact target resolution [targetWidth] x [targetHeight]
-     * using centered "cover" fitting.
+     * using cover fitting (centered by default, or with custom [cropX]/[cropY] offsets).
      *
      * Returns a new [Bitmap] matching targetWidth and targetHeight with aspect ratio preserved
-     * and excess borders cleanly cropped off symmetrically.
+     * and excess borders cleanly cropped off.
      */
     fun createCoverBitmap(
         source: Bitmap,
         targetWidth: Int,
-        targetHeight: Int
+        targetHeight: Int,
+        cropX: Float? = null,
+        cropY: Float? = null
     ): Bitmap {
         val calc = CropCalculation.calculateCoverCrop(
             sourceWidth = source.width,
             sourceHeight = source.height,
             targetWidth = targetWidth,
-            targetHeight = targetHeight
+            targetHeight = targetHeight,
+            cropX = cropX,
+            cropY = cropY
         )
 
         val output = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)

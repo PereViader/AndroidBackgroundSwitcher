@@ -24,6 +24,13 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE photos ADD COLUMN cropX REAL")
+            database.execSQL("ALTER TABLE photos ADD COLUMN cropY REAL")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -31,7 +38,7 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "background_switcher.db"
-        ).addMigrations(MIGRATION_1_2)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .fallbackToDestructiveMigration()
             .build()
     }

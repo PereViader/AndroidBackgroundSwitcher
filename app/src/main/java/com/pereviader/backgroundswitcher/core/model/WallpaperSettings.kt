@@ -19,5 +19,6 @@ data class WallpaperSettings(
     val onlyOnWifi: Boolean = true,
     val isEnabled: Boolean = true,
     val lastRotatedAt: Long = 0L,
-    val currentWallpaperUri: String? = null
+    val currentWallpaperUri: String? = null,
+    val currentPhotoId: String? = null
 )

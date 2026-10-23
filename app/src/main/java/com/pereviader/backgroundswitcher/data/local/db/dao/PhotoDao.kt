@@ -17,6 +17,24 @@ interface PhotoDao {
     @Query("SELECT * FROM photos WHERE id = :id LIMIT 1")
     suspend fun getPhotoById(id: String): PhotoEntity?
 
+    @Query("SELECT * FROM photos WHERE uri = :uri LIMIT 1")
+    suspend fun getPhotoByUri(uri: String): PhotoEntity?
+
+    @Query("SELECT * FROM photos WHERE id = :id LIMIT 1")
+    fun observePhotoById(id: String): Flow<PhotoEntity?>
+
+    @Query("SELECT * FROM photos WHERE uri = :uri LIMIT 1")
+    fun observePhotoByUri(uri: String): Flow<PhotoEntity?>
+
+    @Query("SELECT * FROM photos WHERE albumId = :albumId")
+    suspend fun getPhotosListByAlbum(albumId: String): List<PhotoEntity>
+
+    @Query("UPDATE photos SET cropX = :cropX, cropY = :cropY WHERE id = :id")
+    suspend fun updateCrop(id: String, cropX: Float?, cropY: Float?)
+
+    @Query("UPDATE photos SET cropX = :cropX, cropY = :cropY WHERE uri = :uri")
+    suspend fun updateCropByUri(uri: String, cropX: Float?, cropY: Float?)
+
     @Query("""
         SELECT p.* FROM photos p 
         INNER JOIN albums a ON p.albumId = a.id 

@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pereviader.backgroundswitcher.background.WorkScheduler
 import com.pereviader.backgroundswitcher.core.model.Album
+import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 import com.pereviader.backgroundswitcher.domain.repository.AlbumRepository
+import com.pereviader.backgroundswitcher.domain.repository.WallpaperRepository
 import com.pereviader.backgroundswitcher.domain.usecase.CycleWallpaperUseCase
 import com.pereviader.backgroundswitcher.domain.usecase.GetAlbumsUseCase
 import com.pereviader.backgroundswitcher.domain.usecase.GetWallpaperSettingsUseCase
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -35,6 +38,7 @@ class MainViewModel @Inject constructor(
     private val updateWallpaperSettingsUseCase: UpdateWallpaperSettingsUseCase,
     private val cycleWallpaperUseCase: CycleWallpaperUseCase,
     private val albumRepository: AlbumRepository,
+    private val wallpaperRepository: WallpaperRepository,
     private val workScheduler: WorkScheduler
 ) : ViewModel() {
 
@@ -43,6 +47,13 @@ class MainViewModel @Inject constructor(
 
     val settings: StateFlow<WallpaperSettings> = getWallpaperSettingsUseCase()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WallpaperSettings())
+
+    val previewPhoto: StateFlow<PhotoItem?> = combine(
+        wallpaperRepository.getCurrentPhoto(),
+        albums
+    ) { current, _ ->
+        current ?: wallpaperRepository.getNextCandidatePhoto()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -70,6 +81,12 @@ class MainViewModel @Inject constructor(
     fun toggleAlbum(albumId: String, isSelected: Boolean) {
         viewModelScope.launch {
             toggleAlbumSelectionUseCase(albumId, isSelected)
+        }
+    }
+
+    fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?) {
+        viewModelScope.launch {
+            wallpaperRepository.updatePhotoCrop(photoId, cropX, cropY)
         }
     }
 

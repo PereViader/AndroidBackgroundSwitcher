@@ -19,5 +19,7 @@ data class PhotoEntity(
     val width: Int = 0,
     val height: Int = 0,
     val dateAdded: Long = System.currentTimeMillis(),
-    val lastDisplayedAt: Long = 0L
+    val lastDisplayedAt: Long = 0L,
+    val cropX: Float? = null,
+    val cropY: Float? = null
 )

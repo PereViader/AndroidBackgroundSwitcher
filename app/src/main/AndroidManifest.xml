@@ -3,6 +3,7 @@
 
     <!-- Wallpaper permissions -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS" />
 
     <!-- Storage / Media access -->
     <!-- Android 13+ (API 33+) -->

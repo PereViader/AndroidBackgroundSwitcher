@@ -59,7 +59,16 @@ class AlbumRepositoryImpl @Inject constructor(
         val selectedAlbumIds = entitiesToSave.filter { it.isSelected }.map { it.id }
         for (albumId in selectedAlbumIds) {
             val photos = mediaStoreScanner.getPhotosInAlbum(albumId)
-            photoDao.insertOrUpdateAll(photos.map { it.toEntity() })
+            val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.id }
+            val photosToSave = photos.map { photo ->
+                val existing = existingPhotos[photo.id]
+                photo.toEntity().copy(
+                    cropX = existing?.cropX,
+                    cropY = existing?.cropY,
+                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
+                )
+            }
+            photoDao.insertOrUpdateAll(photosToSave)
         }
     }
 
@@ -69,7 +78,16 @@ class AlbumRepositoryImpl @Inject constructor(
             val album = albumDao.getAlbumById(albumId)
             if (album != null && album.source == AlbumSource.LOCAL_MEDIASTORE.name) {
                 val photos = mediaStoreScanner.getPhotosInAlbum(albumId)
-                photoDao.insertOrUpdateAll(photos.map { it.toEntity() })
+                val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.id }
+                val photosToSave = photos.map { photo ->
+                    val existing = existingPhotos[photo.id]
+                    photo.toEntity().copy(
+                        cropX = existing?.cropX,
+                        cropY = existing?.cropY,
+                        lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
+                    )
+                }
+                photoDao.insertOrUpdateAll(photosToSave)
             }
         }
     }
@@ -99,9 +117,18 @@ class AlbumRepositoryImpl @Inject constructor(
                 photoCount = parsed.photos.size,
                 lastSyncedAt = System.currentTimeMillis()
             )
+            val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.uri }
+            val photosToSave = parsed.photos.map { photo ->
+                val existing = existingPhotos[photo.uri]
+                photo.toEntity().copy(
+                    cropX = existing?.cropX,
+                    cropY = existing?.cropY,
+                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
+                )
+            }
             albumDao.insertOrUpdate(updatedEntity)
             photoDao.deletePhotosByAlbum(albumId)
-            photoDao.insertOrUpdateAll(parsed.photos.map { it.toEntity() })
+            photoDao.insertOrUpdateAll(photosToSave)
             updatedEntity.toDomain()
         }
     }
@@ -112,7 +139,16 @@ class AlbumRepositoryImpl @Inject constructor(
             when (album.source) {
                 AlbumSource.LOCAL_MEDIASTORE.name -> {
                     val photos = mediaStoreScanner.getPhotosInAlbum(album.id)
-                    photoDao.insertOrUpdateAll(photos.map { it.toEntity() })
+                    val existingPhotos = photoDao.getPhotosListByAlbum(album.id).associateBy { it.id }
+                    val photosToSave = photos.map { photo ->
+                        val existing = existingPhotos[photo.id]
+                        photo.toEntity().copy(
+                            cropX = existing?.cropX,
+                            cropY = existing?.cropY,
+                            lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
+                        )
+                    }
+                    photoDao.insertOrUpdateAll(photosToSave)
                     albumDao.insertOrUpdate(
                         album.copy(
                             photoCount = photos.size,
@@ -200,7 +236,9 @@ class AlbumRepositoryImpl @Inject constructor(
         width = width,
         height = height,
         dateAdded = dateAdded,
-        lastDisplayedAt = lastDisplayedAt
+        lastDisplayedAt = lastDisplayedAt,
+        cropX = cropX,
+        cropY = cropY
     )
 
     private fun PhotoItem.toEntity() = PhotoEntity(
@@ -210,6 +248,8 @@ class AlbumRepositoryImpl @Inject constructor(
         width = width,
         height = height,
         dateAdded = dateAdded,
-        lastDisplayedAt = lastDisplayedAt
+        lastDisplayedAt = lastDisplayedAt,
+        cropX = cropX,
+        cropY = cropY
     )
 }

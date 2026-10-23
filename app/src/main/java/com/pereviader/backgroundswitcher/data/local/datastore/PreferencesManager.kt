@@ -31,6 +31,7 @@ class PreferencesManager @Inject constructor(
         val IS_ENABLED = booleanPreferencesKey("is_enabled")
         val LAST_ROTATED_AT = longPreferencesKey("last_rotated_at")
         val CURRENT_WALLPAPER_URI = stringPreferencesKey("current_wallpaper_uri")
+        val CURRENT_PHOTO_ID = stringPreferencesKey("current_photo_id")
     }
 
     val settingsFlow: Flow<WallpaperSettings> = context.dataStore.data.map { preferences ->
@@ -45,7 +46,8 @@ class PreferencesManager @Inject constructor(
             onlyOnWifi = preferences[Keys.ONLY_ON_WIFI] ?: true,
             isEnabled = preferences[Keys.IS_ENABLED] ?: true,
             lastRotatedAt = preferences[Keys.LAST_ROTATED_AT] ?: 0L,
-            currentWallpaperUri = preferences[Keys.CURRENT_WALLPAPER_URI]
+            currentWallpaperUri = preferences[Keys.CURRENT_WALLPAPER_URI],
+            currentPhotoId = preferences[Keys.CURRENT_PHOTO_ID]
         )
     }
 
@@ -69,10 +71,11 @@ class PreferencesManager @Inject constructor(
         context.dataStore.edit { it[Keys.IS_ENABLED] = enabled }
     }
 
-    suspend fun updateLastRotated(timestamp: Long, uri: String?) {
+    suspend fun updateLastRotated(timestamp: Long, uri: String?, photoId: String? = null) {
         context.dataStore.edit {
             it[Keys.LAST_ROTATED_AT] = timestamp
             if (uri != null) it[Keys.CURRENT_WALLPAPER_URI] = uri
+            if (photoId != null) it[Keys.CURRENT_PHOTO_ID] = photoId
         }
     }
 }

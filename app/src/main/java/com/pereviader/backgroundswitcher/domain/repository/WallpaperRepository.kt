@@ -12,4 +12,7 @@ interface WallpaperRepository {
     suspend fun loadAndCropBitmap(photo: PhotoItem, targetWidth: Int, targetHeight: Int): Bitmap?
     suspend fun applyWallpaper(bitmap: Bitmap): Result<Unit>
     suspend fun markPhotoDisplayed(photoId: String)
+    suspend fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?)
+    suspend fun reapplyCurrentWallpaper(): Result<Unit>
+    fun getCurrentPhoto(): Flow<PhotoItem?>
 }

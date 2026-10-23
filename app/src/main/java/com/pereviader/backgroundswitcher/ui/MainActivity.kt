@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
 fun MainAppContent(viewModel: MainViewModel) {
     val albums by viewModel.albums.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val previewPhoto by viewModel.previewPhoto.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -152,8 +153,14 @@ fun MainAppContent(viewModel: MainViewModel) {
         when (selectedTab) {
             0 -> DashboardScreen(
                 settings = settings,
-                albums = albums,
+                currentPhoto = previewPhoto,
                 onTriggerCycleNow = { viewModel.triggerImmediateCycle() },
+                onCropChanged = { photoId, cropX, cropY ->
+                    viewModel.updatePhotoCrop(photoId, cropX, cropY)
+                },
+                onResetCrop = { photoId ->
+                    viewModel.updatePhotoCrop(photoId, null, null)
+                },
                 modifier = Modifier.padding(innerPadding)
             )
             1 -> AlbumSelectionScreen(
