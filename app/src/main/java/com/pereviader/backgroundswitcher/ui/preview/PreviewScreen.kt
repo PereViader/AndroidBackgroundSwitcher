@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AlertDialog
@@ -48,7 +47,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -86,7 +84,6 @@ import com.pereviader.backgroundswitcher.core.crop.ScreenDimensions
 import com.pereviader.backgroundswitcher.core.crop.ScreenMetricsHelper
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.Locale
 import kotlin.math.max
 
 @Composable
@@ -99,7 +96,6 @@ fun PreviewScreen(
     onNextPhoto: () -> Unit,
     onTogglePhotoEnabled: (photoId: String, isEnabled: Boolean) -> Unit,
     onCustomizationChanged: (photoId: String, cropX: Float?, cropY: Float?, zoom: Float?) -> Unit,
-    onResetCustomization: (photoId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -111,12 +107,6 @@ fun PreviewScreen(
     }
 
     var showActionModal by remember { mutableStateOf(false) }
-
-    val hasCustomization = currentPhoto != null && (
-        currentPhoto.cropX != null ||
-        currentPhoto.cropY != null ||
-        (currentPhoto.zoom != null && currentPhoto.zoom > 1.001f)
-    )
 
     Column(
         modifier = modifier
@@ -244,22 +234,6 @@ fun PreviewScreen(
                         Text(
                             text = if (currentPhoto.isEnabled) "Exclude from Rotation" else "Include in Rotation"
                         )
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            onResetCustomization(currentPhoto.id)
-                            showActionModal = false
-                        },
-                        enabled = hasCustomization,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.RestartAlt,
-                            contentDescription = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Reset to Centered Fit")
                     }
                 }
             },
@@ -564,23 +538,7 @@ private fun PhotoPreviewCanvas(
                             } while (event.changes.any { it.pressed })
 
                             if (anyMotion) {
-                                val finalCalc = CropCalculation.calculateCoverCrop(
-                                    sourceWidth = bitmap.width,
-                                    sourceHeight = bitmap.height,
-                                    targetWidth = screenDimensions.width,
-                                    targetHeight = screenDimensions.height,
-                                    cropX = normX,
-                                    cropY = normY,
-                                    zoom = currentZoom
-                                )
-                                val finalExcessX = max(0, finalCalc.scaledWidth - screenDimensions.width)
-                                val finalExcessY = max(0, finalCalc.scaledHeight - screenDimensions.height)
-
-                                val finalCropX = if (finalExcessX > 0) normX else null
-                                val finalCropY = if (finalExcessY > 0) normY else null
-                                val finalZoom = if (currentZoom > 1.001f) currentZoom else null
-
-                                onCustomizationChanged(finalCropX, finalCropY, finalZoom)
+                                onCustomizationChanged(normX, normY, currentZoom)
                             }
                         }
                     }
@@ -645,31 +603,6 @@ private fun PhotoPreviewCanvas(
                         )
                     }
                 }
-            }
-
-            // Status badge indicating position and zoom
-            val isCustomZoom = currentZoom > 1.001f
-            val isCustomPos = (photo.cropX != null || normX != 0.5f) || (photo.cropY != null || normY != 0.5f)
-            val isCustom = isCustomZoom || isCustomPos || photo.zoom != null
-
-            val badgeText = when {
-                isCustomZoom -> String.format(Locale.US, "Custom Fit • %.1fx", currentZoom)
-                isCustomPos -> "Custom Position"
-                else -> "Press & hold for options"
-            }
-
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-            ) {
-                Text(
-                    text = badgeText,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
             }
         }
     }

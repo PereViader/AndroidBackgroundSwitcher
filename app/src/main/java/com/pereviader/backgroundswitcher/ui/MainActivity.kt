@@ -164,9 +164,6 @@ fun MainAppContent(viewModel: MainViewModel) {
                 onCustomizationChanged = { photoId, cropX, cropY, zoom ->
                     viewModel.updatePhotoCustomization(photoId, cropX, cropY, zoom)
                 },
-                onResetCustomization = { photoId ->
-                    viewModel.updatePhotoCustomization(photoId, null, null, null)
-                },
                 modifier = Modifier.padding(innerPadding)
             )
             1 -> AlbumSelectionScreen(

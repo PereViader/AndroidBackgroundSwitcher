@@ -175,11 +175,8 @@ class WallpaperRepositoryImpl @Inject constructor(
         val cropX = customization?.cropX ?: photo.cropX
         val cropY = customization?.cropY ?: photo.cropY
         val zoom = customization?.zoom ?: photo.zoom
-        val isDefault = cropX == null && cropY == null && (zoom == null || zoom <= 1.001f) && isEnabled
 
-        if (isDefault) {
-            wallpaperCustomizationDao.deleteCustomization(uri)
-        } else {
+        if (customization != null || !isEnabled || cropX != null || cropY != null || zoom != null) {
             wallpaperCustomizationDao.insertOrUpdate(
                 WallpaperCustomizationEntity(
                     imageUri = uri,
@@ -202,25 +199,19 @@ class WallpaperRepositoryImpl @Inject constructor(
         val photo = photoDao.getPhotoById(photoId)
         val uri = photo?.uri
         val currentEnabled = photo?.isEnabled ?: true
-        val isDefault = cropX == null && cropY == null && (zoom == null || zoom <= 1.001f) && currentEnabled
 
         if (uri != null) {
-            if (isDefault) {
-                wallpaperCustomizationDao.deleteCustomization(uri)
-                photoDao.updateCustomizationByUri(uri, null, null, null)
-            } else {
-                wallpaperCustomizationDao.insertOrUpdate(
-                    WallpaperCustomizationEntity(
-                        imageUri = uri,
-                        cropX = cropX,
-                        cropY = cropY,
-                        zoom = zoom,
-                        isEnabled = currentEnabled,
-                        updatedAt = System.currentTimeMillis()
-                    )
+            wallpaperCustomizationDao.insertOrUpdate(
+                WallpaperCustomizationEntity(
+                    imageUri = uri,
+                    cropX = cropX,
+                    cropY = cropY,
+                    zoom = zoom,
+                    isEnabled = currentEnabled,
+                    updatedAt = System.currentTimeMillis()
                 )
-                photoDao.updateCustomizationByUri(uri, cropX, cropY, zoom)
-            }
+            )
+            photoDao.updateCustomizationByUri(uri, cropX, cropY, zoom)
         } else {
             photoDao.updateCustomization(photoId, cropX, cropY, zoom)
         }

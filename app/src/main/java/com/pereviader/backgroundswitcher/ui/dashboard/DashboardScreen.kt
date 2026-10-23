@@ -13,7 +13,7 @@ fun DashboardScreen(
     currentPhoto: PhotoItem?,
     onTriggerCycleNow: () -> Unit,
     onCropChanged: (photoId: String, cropX: Float?, cropY: Float?) -> Unit,
-    onResetCrop: (photoId: String) -> Unit,
+    onResetCrop: (photoId: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     PreviewScreen(
@@ -27,7 +27,6 @@ fun DashboardScreen(
         onCustomizationChanged = { photoId, cropX, cropY, _ ->
             onCropChanged(photoId, cropX, cropY)
         },
-        onResetCustomization = onResetCrop,
         modifier = modifier
     )
 }

@@ -79,7 +79,7 @@ class WallpaperRepositoryImplTest {
     }
 
     @Test
-    fun `updatePhotoCustomization with default values deletes customization from DAO and resets photo`() = runTest {
+    fun `updatePhotoCustomization persists positioned entry in DAO and never deletes it`() = runTest {
         val photo = PhotoEntity(
             id = "photo_1",
             albumId = "album_1",
@@ -92,16 +92,26 @@ class WallpaperRepositoryImplTest {
 
         repository.updatePhotoCustomization(
             photoId = "photo_1",
-            cropX = null,
-            cropY = null,
-            zoom = null
+            cropX = 0.5f,
+            cropY = 0.5f,
+            zoom = 1.0f
         )
 
         coVerify {
-            wallpaperCustomizationDao.deleteCustomization("content://media/external/images/media/42")
+            wallpaperCustomizationDao.insertOrUpdate(
+                match {
+                    it.imageUri == "content://media/external/images/media/42" &&
+                        it.cropX == 0.5f &&
+                        it.cropY == 0.5f &&
+                        it.zoom == 1.0f
+                }
+            )
         }
         coVerify {
-            photoDao.updateCustomizationByUri("content://media/external/images/media/42", null, null, null)
+            photoDao.updateCustomizationByUri("content://media/external/images/media/42", 0.5f, 0.5f, 1.0f)
+        }
+        coVerify(exactly = 0) {
+            wallpaperCustomizationDao.deleteCustomization(any())
         }
     }
 
@@ -129,23 +139,42 @@ class WallpaperRepositoryImplTest {
     }
 
     @Test
-    fun `togglePhotoEnabled with true and default crop deletes customization from DAO and enables photo`() = runTest {
+    fun `togglePhotoEnabled with true preserves existing customization in DAO and enables photo`() = runTest {
         val photo = PhotoEntity(
             id = "photo_1",
             albumId = "album_1",
             uri = "content://media/external/images/media/42",
+            cropX = 0.5f,
+            cropY = 0.5f,
+            zoom = 1.0f,
             isEnabled = false
         )
         coEvery { photoDao.getPhotoById("photo_1") } returns photo
         coEvery { wallpaperCustomizationDao.getCustomization("content://media/external/images/media/42") } returns WallpaperCustomizationEntity(
             imageUri = "content://media/external/images/media/42",
+            cropX = 0.5f,
+            cropY = 0.5f,
+            zoom = 1.0f,
             isEnabled = false
         )
 
         repository.togglePhotoEnabled("photo_1", true)
 
         coVerify { photoDao.updatePhotoEnabled("photo_1", true) }
-        coVerify { wallpaperCustomizationDao.deleteCustomization("content://media/external/images/media/42") }
+        coVerify {
+            wallpaperCustomizationDao.insertOrUpdate(
+                match {
+                    it.imageUri == "content://media/external/images/media/42" &&
+                        it.cropX == 0.5f &&
+                        it.cropY == 0.5f &&
+                        it.zoom == 1.0f &&
+                        it.isEnabled
+                }
+            )
+        }
+        coVerify(exactly = 0) {
+            wallpaperCustomizationDao.deleteCustomization(any())
+        }
     }
 
     @Test
