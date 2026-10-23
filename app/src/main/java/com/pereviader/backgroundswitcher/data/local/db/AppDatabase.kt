@@ -9,7 +9,7 @@ import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 
 @Database(
     entities = [AlbumEntity::class, PhotoEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

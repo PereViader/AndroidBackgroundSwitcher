@@ -161,6 +161,9 @@ fun MainAppContent(viewModel: MainViewModel) {
                 onToggleAlbum = { id, checked -> viewModel.toggleAlbum(id, checked) },
                 onRefresh = { viewModel.refreshAlbums() },
                 onImportGooglePhotosUrl = { url -> viewModel.importGooglePhotosAlbum(url) },
+                onSyncGooglePhotosAlbum = { id -> viewModel.syncGooglePhotosAlbum(id) },
+                onDeleteAlbum = { id -> viewModel.deleteAlbum(id) },
+                getPhotosForAlbum = { id -> viewModel.getPhotosForAlbum(id) },
                 modifier = Modifier.padding(innerPadding)
             )
             2 -> SettingsScreen(

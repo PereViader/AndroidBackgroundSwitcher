@@ -3,11 +3,12 @@ package com.pereviader.backgroundswitcher.data.repository
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.util.Log
 import coil.ImageLoader
+import coil.request.ErrorResult
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.pereviader.backgroundswitcher.core.crop.CenterCropEngine
-import com.pereviader.backgroundswitcher.core.crop.ScreenMetricsHelper
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import com.pereviader.backgroundswitcher.core.model.RotationOrder
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
@@ -28,10 +29,13 @@ class WallpaperRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferencesManager: PreferencesManager,
     private val photoDao: PhotoDao,
-    private val wallpaperManagerHelper: WallpaperManagerHelper
+    private val wallpaperManagerHelper: WallpaperManagerHelper,
+    private val imageLoader: ImageLoader
 ) : WallpaperRepository {
 
-    private val imageLoader = ImageLoader.Builder(context).build()
+    companion object {
+        private const val TAG = "WallpaperRepository"
+    }
 
     override fun getSettings(): Flow<WallpaperSettings> = preferencesManager.settingsFlow
 
@@ -75,15 +79,26 @@ class WallpaperRepositoryImpl @Inject constructor(
                 .allowHardware(false) // Software bitmap required for Canvas manipulation
                 .build()
 
-            val result = (imageLoader.execute(request) as? SuccessResult)?.drawable
-            val sourceBitmap = (result as? BitmapDrawable)?.bitmap ?: return@withContext null
+            val result = imageLoader.execute(request)
+            if (result !is SuccessResult) {
+                val error = (result as? ErrorResult)?.throwable
+                Log.e(TAG, "Failed to load image from ${photo.uri}", error)
+                return@withContext null
+            }
+
+            val sourceBitmap = (result.drawable as? BitmapDrawable)?.bitmap
+            if (sourceBitmap == null) {
+                Log.e(TAG, "Loaded drawable is not a BitmapDrawable for ${photo.uri}")
+                return@withContext null
+            }
 
             CenterCropEngine.createCoverBitmap(
                 source = sourceBitmap,
                 targetWidth = targetWidth,
                 targetHeight = targetHeight
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in loadAndCropBitmap for ${photo.uri}", e)
             null
         }
     }
@@ -96,7 +111,7 @@ class WallpaperRepositoryImpl @Inject constructor(
     override suspend fun markPhotoDisplayed(photoId: String) {
         val now = System.currentTimeMillis()
         photoDao.updateLastDisplayed(photoId, now)
-        val photo = photoDao.getLeastRecentlyUsedPhoto()
+        val photo = photoDao.getPhotoById(photoId)
         preferencesManager.updateLastRotated(now, photo?.uri)
     }
 }

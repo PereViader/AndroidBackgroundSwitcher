@@ -105,10 +105,34 @@ class MainViewModel @Inject constructor(
             val result = albumRepository.importGooglePhotosAlbum(url)
             _isRefreshing.value = false
             if (result.isSuccess) {
-                _eventFlow.emit(UiEvent.ShowSnackbar("Imported ${result.getOrNull()?.name}"))
+                val album = result.getOrNull()
+                _eventFlow.emit(UiEvent.ShowSnackbar("Imported '${album?.name}' (${album?.photoCount} photos)"))
             } else {
-                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to import album: ${result.exceptionOrNull()?.message}"))
+                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to import: ${result.exceptionOrNull()?.message}"))
             }
         }
     }
+
+    fun syncGooglePhotosAlbum(albumId: String) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val result = albumRepository.syncGooglePhotosAlbum(albumId)
+            _isRefreshing.value = false
+            if (result.isSuccess) {
+                val album = result.getOrNull()
+                _eventFlow.emit(UiEvent.ShowSnackbar("Synced '${album?.name}' (${album?.photoCount} photos)"))
+            } else {
+                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to sync: ${result.exceptionOrNull()?.message}"))
+            }
+        }
+    }
+
+    fun deleteAlbum(albumId: String) {
+        viewModelScope.launch {
+            albumRepository.deleteAlbum(albumId)
+            _eventFlow.emit(UiEvent.ShowSnackbar("Album removed"))
+        }
+    }
+
+    fun getPhotosForAlbum(albumId: String) = albumRepository.getPhotosInAlbum(albumId)
 }

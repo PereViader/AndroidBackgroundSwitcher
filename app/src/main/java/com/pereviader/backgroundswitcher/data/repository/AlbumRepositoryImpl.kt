@@ -49,12 +49,13 @@ class AlbumRepositoryImpl @Inject constructor(
                 photoCount = scanned.photoCount,
                 source = AlbumSource.LOCAL_MEDIASTORE.name,
                 isSelected = existing?.isSelected ?: false,
-                lastSyncedAt = System.currentTimeMillis()
+                lastSyncedAt = System.currentTimeMillis(),
+                sourceUrl = existing?.sourceUrl
             )
         }
         albumDao.insertOrUpdateAll(entitiesToSave)
 
-        // For selected albums, sync their photos
+        // For selected local albums, sync their photos
         val selectedAlbumIds = entitiesToSave.filter { it.isSelected }.map { it.id }
         for (albumId in selectedAlbumIds) {
             val photos = mediaStoreScanner.getPhotosInAlbum(albumId)
@@ -76,9 +77,32 @@ class AlbumRepositoryImpl @Inject constructor(
     override suspend fun importGooglePhotosAlbum(url: String): Result<Album> {
         val parseResult = googlePhotosParser.parseAlbumUrl(url)
         return parseResult.map { parsed ->
-            albumDao.insertOrUpdate(parsed.album.toEntity())
+            val albumEntity = parsed.album.toEntity().copy(isSelected = true)
+            albumDao.insertOrUpdate(albumEntity)
+            photoDao.deletePhotosByAlbum(parsed.album.id)
             photoDao.insertOrUpdateAll(parsed.photos.map { it.toEntity() })
-            parsed.album
+            parsed.album.copy(isSelected = true)
+        }
+    }
+
+    override suspend fun syncGooglePhotosAlbum(albumId: String): Result<Album> {
+        val album = albumDao.getAlbumById(albumId)
+            ?: return Result.failure(IllegalStateException("Album not found"))
+        val url = album.sourceUrl
+            ?: return Result.failure(IllegalStateException("Album has no remote Google Photos URL saved"))
+
+        val parseResult = googlePhotosParser.parseAlbumUrl(url)
+        return parseResult.map { parsed ->
+            val updatedEntity = album.copy(
+                name = parsed.album.name,
+                coverUri = parsed.album.coverUri,
+                photoCount = parsed.photos.size,
+                lastSyncedAt = System.currentTimeMillis()
+            )
+            albumDao.insertOrUpdate(updatedEntity)
+            photoDao.deletePhotosByAlbum(albumId)
+            photoDao.insertOrUpdateAll(parsed.photos.map { it.toEntity() })
+            updatedEntity.toDomain()
         }
     }
 
@@ -97,9 +121,10 @@ class AlbumRepositoryImpl @Inject constructor(
                         )
                     )
                 }
-                // For Google Photos shared albums, remote resync can re-fetch URLs
                 AlbumSource.GOOGLE_PHOTOS_SHARE.name -> {
-                    // Re-query if link is stored
+                    if (!album.sourceUrl.isNullOrBlank()) {
+                        syncGooglePhotosAlbum(album.id)
+                    }
                 }
             }
         }
@@ -111,6 +136,41 @@ class AlbumRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun deleteAlbum(albumId: String) {
+        albumDao.deleteAlbum(albumId)
+        photoDao.deletePhotosByAlbum(albumId)
+    }
+
+    override suspend fun importSharedPhotos(uris: List<String>, albumTitle: String?): Result<Album> {
+        if (uris.isEmpty()) return Result.failure(IllegalArgumentException("No photos provided"))
+        val albumId = "shared_direct"
+        val existing = albumDao.getAlbumById(albumId)
+        val name = albumTitle ?: "Shared Photos"
+        val album = Album(
+            id = albumId,
+            name = name,
+            coverUri = uris.firstOrNull(),
+            photoCount = (existing?.photoCount ?: 0) + uris.size,
+            source = AlbumSource.GOOGLE_PHOTOS_SHARE,
+            isSelected = true,
+            lastSyncedAt = System.currentTimeMillis()
+        )
+        val photos = uris.mapIndexed { index, uri ->
+            PhotoItem(
+                id = "${albumId}_${System.currentTimeMillis()}_$index",
+                albumId = albumId,
+                uri = uri,
+                width = 1920,
+                height = 1080,
+                dateAdded = System.currentTimeMillis() - (index * 1000L),
+                lastDisplayedAt = 0L
+            )
+        }
+        albumDao.insertOrUpdate(album.toEntity())
+        photoDao.insertOrUpdateAll(photos.map { it.toEntity() })
+        return Result.success(album)
+    }
+
     private fun AlbumEntity.toDomain() = Album(
         id = id,
         name = name,
@@ -118,7 +178,8 @@ class AlbumRepositoryImpl @Inject constructor(
         photoCount = photoCount,
         source = runCatching { AlbumSource.valueOf(source) }.getOrDefault(AlbumSource.LOCAL_MEDIASTORE),
         isSelected = isSelected,
-        lastSyncedAt = lastSyncedAt
+        lastSyncedAt = lastSyncedAt,
+        sourceUrl = sourceUrl
     )
 
     private fun Album.toEntity() = AlbumEntity(
@@ -128,7 +189,8 @@ class AlbumRepositoryImpl @Inject constructor(
         photoCount = photoCount,
         source = source.name,
         isSelected = isSelected,
-        lastSyncedAt = lastSyncedAt
+        lastSyncedAt = lastSyncedAt,
+        sourceUrl = sourceUrl
     )
 
     private fun PhotoEntity.toDomain() = PhotoItem(

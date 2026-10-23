@@ -2,6 +2,8 @@ package com.pereviader.backgroundswitcher.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.pereviader.backgroundswitcher.data.local.db.AppDatabase
 import com.pereviader.backgroundswitcher.data.local.db.dao.AlbumDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
@@ -16,6 +18,12 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
+    private val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE albums ADD COLUMN sourceUrl TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -23,7 +31,8 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "background_switcher.db"
-        ).fallbackToDestructiveMigration()
+        ).addMigrations(MIGRATION_1_2)
+            .fallbackToDestructiveMigration()
             .build()
     }
 

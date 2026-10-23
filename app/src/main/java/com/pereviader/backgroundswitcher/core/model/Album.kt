@@ -13,5 +13,6 @@ data class Album(
     val photoCount: Int,
     val source: AlbumSource,
     val isSelected: Boolean = false,
-    val lastSyncedAt: Long = System.currentTimeMillis()
+    val lastSyncedAt: Long = System.currentTimeMillis(),
+    val sourceUrl: String? = null
 )

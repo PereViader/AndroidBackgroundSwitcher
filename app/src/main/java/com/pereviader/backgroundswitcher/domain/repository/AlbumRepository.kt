@@ -10,6 +10,9 @@ interface AlbumRepository {
     suspend fun refreshDeviceAlbums()
     suspend fun toggleAlbumSelection(albumId: String, isSelected: Boolean)
     suspend fun importGooglePhotosAlbum(url: String): Result<Album>
+    suspend fun syncGooglePhotosAlbum(albumId: String): Result<Album>
     suspend fun syncAllSelectedAlbums()
     fun getPhotosInAlbum(albumId: String): Flow<List<PhotoItem>>
+    suspend fun deleteAlbum(albumId: String)
+    suspend fun importSharedPhotos(uris: List<String>, albumTitle: String? = null): Result<Album>
 }
