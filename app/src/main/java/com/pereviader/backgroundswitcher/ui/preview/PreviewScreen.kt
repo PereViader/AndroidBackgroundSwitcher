@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -439,9 +440,14 @@ private fun PhotoPreviewCanvas(
     val initialNormY = (photo.cropY ?: 0.5f).coerceIn(0f, 1f)
     val initialZoom = (photo.zoom ?: 1.0f).coerceIn(1.0f, 5.0f)
 
-    var normX by remember(photo.id, photo.cropX) { mutableFloatStateOf(initialNormX) }
-    var normY by remember(photo.id, photo.cropY) { mutableFloatStateOf(initialNormY) }
-    var currentZoom by remember(photo.id, photo.zoom) { mutableFloatStateOf(initialZoom) }
+    var normX by remember(photo.id) { mutableFloatStateOf(initialNormX) }
+    var normY by remember(photo.id) { mutableFloatStateOf(initialNormY) }
+    var currentZoom by remember(photo.id) { mutableFloatStateOf(initialZoom) }
+
+    val currentOnCustomizationChanged by rememberUpdatedState(onCustomizationChanged)
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
+    val currentBitmap by rememberUpdatedState(bitmap)
+    val currentScreenDimensions by rememberUpdatedState(screenDimensions)
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -449,7 +455,8 @@ private fun PhotoPreviewCanvas(
     ) {
         val previewWidth = constraints.maxWidth.toFloat()
         val previewHeight = constraints.maxHeight.toFloat()
-        val scaleFactor = previewHeight / screenDimensions.height.toFloat()
+        val scaleFactor = previewHeight / currentScreenDimensions.height.toFloat()
+        val currentScaleFactor by rememberUpdatedState(scaleFactor)
 
         Box(
             modifier = Modifier
@@ -461,7 +468,9 @@ private fun PhotoPreviewCanvas(
                         val longPressTimeout = viewConfiguration.longPressTimeoutMillis
 
                         // Check if the gesture is a stationary hold (long press)
-                        var isLongPress = false
+                        var initialPan = Offset.Zero
+                        var initialZoom = 1f
+                        var isFingerPressed = false
                         val movementOccurred = withTimeoutOrNull(longPressTimeout) {
                             var moved = false
                             do {
@@ -470,6 +479,10 @@ private fun PhotoPreviewCanvas(
                                 val zoom = checkEvent.calculateZoom()
                                 if (pan != Offset.Zero || zoom != 1f) {
                                     moved = true
+                                    initialPan = pan
+                                    initialZoom = zoom
+                                    isFingerPressed = checkEvent.changes.any { it.pressed }
+                                    checkEvent.changes.forEach { it.consume() }
                                     break
                                 }
                             } while (checkEvent.changes.any { it.pressed })
@@ -478,67 +491,74 @@ private fun PhotoPreviewCanvas(
 
                         if (movementOccurred == null) {
                             // Timed out while holding still -> trigger long press
-                            isLongPress = true
-                            onLongPress()
+                            currentOnLongPress()
                             // Consume rest of touch until release
                             do {
                                 val releaseEvent = awaitPointerEvent()
                                 releaseEvent.changes.forEach { it.consume() }
                             } while (releaseEvent.changes.any { it.pressed })
-                        }
-
-                        if (!isLongPress) {
+                        } else if (movementOccurred) {
                             // Standard interactive pan & pinch-to-zoom loop
                             var anyMotion = false
-                            do {
+
+                            fun applyMotion(panDelta: Offset, zoomDelta: Float) {
+                                if (zoomDelta != 1f) {
+                                    currentZoom = (currentZoom * zoomDelta).coerceIn(1.0f, 5.0f)
+                                }
+
+                                val currentCalc = CropCalculation.calculateCoverCrop(
+                                    sourceWidth = currentBitmap.width,
+                                    sourceHeight = currentBitmap.height,
+                                    targetWidth = currentScreenDimensions.width,
+                                    targetHeight = currentScreenDimensions.height,
+                                    cropX = normX,
+                                    cropY = normY,
+                                    zoom = currentZoom
+                                )
+                                val excessX = max(0, currentCalc.scaledWidth - currentScreenDimensions.width)
+                                val excessY = max(0, currentCalc.scaledHeight - currentScreenDimensions.height)
+                                val prevExcessX = excessX * currentScaleFactor
+                                val prevExcessY = excessY * currentScaleFactor
+
+                                if (panDelta != Offset.Zero) {
+                                    if (prevExcessX > 0f) {
+                                        val deltaX = -panDelta.x / prevExcessX
+                                        normX = (normX + deltaX).coerceIn(0f, 1f)
+                                    } else {
+                                        normX = 0.5f
+                                    }
+                                    if (prevExcessY > 0f) {
+                                        val deltaY = -panDelta.y / prevExcessY
+                                        normY = (normY + deltaY).coerceIn(0f, 1f)
+                                    } else {
+                                        normY = 0.5f
+                                    }
+                                } else {
+                                    if (prevExcessX <= 0f) normX = 0.5f
+                                    if (prevExcessY <= 0f) normY = 0.5f
+                                }
+                            }
+
+                            if (initialPan != Offset.Zero || initialZoom != 1f) {
+                                anyMotion = true
+                                applyMotion(initialPan, initialZoom)
+                            }
+
+                            while (isFingerPressed) {
                                 val event = awaitPointerEvent()
                                 val zoomDelta = event.calculateZoom()
                                 val panDelta = event.calculatePan()
 
                                 if (zoomDelta != 1f || panDelta != Offset.Zero) {
                                     anyMotion = true
-                                    if (zoomDelta != 1f) {
-                                        currentZoom = (currentZoom * zoomDelta).coerceIn(1.0f, 5.0f)
-                                    }
-
-                                    val currentCalc = CropCalculation.calculateCoverCrop(
-                                        sourceWidth = bitmap.width,
-                                        sourceHeight = bitmap.height,
-                                        targetWidth = screenDimensions.width,
-                                        targetHeight = screenDimensions.height,
-                                        cropX = normX,
-                                        cropY = normY,
-                                        zoom = currentZoom
-                                    )
-                                    val excessX = max(0, currentCalc.scaledWidth - screenDimensions.width)
-                                    val excessY = max(0, currentCalc.scaledHeight - screenDimensions.height)
-                                    val prevExcessX = excessX * scaleFactor
-                                    val prevExcessY = excessY * scaleFactor
-
-                                    if (panDelta != Offset.Zero) {
-                                        if (prevExcessX > 0f) {
-                                            val deltaX = -panDelta.x / prevExcessX
-                                            normX = (normX + deltaX).coerceIn(0f, 1f)
-                                        } else {
-                                            normX = 0.5f
-                                        }
-                                        if (prevExcessY > 0f) {
-                                            val deltaY = -panDelta.y / prevExcessY
-                                            normY = (normY + deltaY).coerceIn(0f, 1f)
-                                        } else {
-                                            normY = 0.5f
-                                        }
-                                    } else {
-                                        if (prevExcessX <= 0f) normX = 0.5f
-                                        if (prevExcessY <= 0f) normY = 0.5f
-                                    }
-
+                                    applyMotion(panDelta, zoomDelta)
                                     event.changes.forEach { it.consume() }
                                 }
-                            } while (event.changes.any { it.pressed })
+                                isFingerPressed = event.changes.any { it.pressed }
+                            }
 
                             if (anyMotion) {
-                                onCustomizationChanged(normX, normY, currentZoom)
+                                currentOnCustomizationChanged(normX, normY, currentZoom)
                             }
                         }
                     }
