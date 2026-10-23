@@ -52,17 +52,8 @@ class MainViewModel @Inject constructor(
     val settings: StateFlow<WallpaperSettings> = getWallpaperSettingsUseCase()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WallpaperSettings())
 
-    private val _selectedPreviewAlbumId = MutableStateFlow<String?>(null)
-    val selectedPreviewAlbumId: StateFlow<String?> = _selectedPreviewAlbumId.asStateFlow()
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val previewPhotos: StateFlow<List<PhotoItem>> = _selectedPreviewAlbumId.flatMapLatest { albumId ->
-        if (albumId != null) {
-            albumRepository.getPhotosInAlbum(albumId)
-        } else {
-            flowOf(emptyList())
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val previewPhotos: StateFlow<List<PhotoItem>> = albumRepository.getPhotosFromSelectedAlbums()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _selectedPreviewPhotoIndex = MutableStateFlow(0)
     val selectedPreviewPhotoIndex: StateFlow<Int> = _selectedPreviewPhotoIndex.asStateFlow()
@@ -90,25 +81,12 @@ class MainViewModel @Inject constructor(
     init {
         refreshAlbums()
         viewModelScope.launch {
-            albums.collectLatest { albumList ->
-                if (albumList.isNotEmpty() && (_selectedPreviewAlbumId.value == null || albumList.none { it.id == _selectedPreviewAlbumId.value })) {
-                    val defaultAlbum = albumList.firstOrNull { it.isSelected } ?: albumList.first()
-                    _selectedPreviewAlbumId.value = defaultAlbum.id
-                }
-            }
-        }
-        viewModelScope.launch {
             previewPhotos.collectLatest { photos ->
                 if (photos.isNotEmpty() && _selectedPreviewPhotoIndex.value >= photos.size) {
                     _selectedPreviewPhotoIndex.value = photos.size - 1
                 }
             }
         }
-    }
-
-    fun selectPreviewAlbum(albumId: String) {
-        _selectedPreviewAlbumId.value = albumId
-        _selectedPreviewPhotoIndex.value = 0
     }
 
     fun selectPreviewPhotoIndex(index: Int) {
@@ -136,12 +114,16 @@ class MainViewModel @Inject constructor(
     }
 
     fun openAlbumInPreview(albumId: String, photoId: String? = null) {
-        _selectedPreviewAlbumId.value = albumId
         if (photoId != null) {
             val idx = previewPhotos.value.indexOfFirst { it.id == photoId }
-            _selectedPreviewPhotoIndex.value = if (idx >= 0) idx else 0
+            if (idx >= 0) {
+                _selectedPreviewPhotoIndex.value = idx
+            }
         } else {
-            _selectedPreviewPhotoIndex.value = 0
+            val idx = previewPhotos.value.indexOfFirst { it.albumId == albumId }
+            if (idx >= 0) {
+                _selectedPreviewPhotoIndex.value = idx
+            }
         }
     }
 

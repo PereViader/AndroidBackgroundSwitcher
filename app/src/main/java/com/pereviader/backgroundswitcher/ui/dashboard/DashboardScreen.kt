@@ -17,12 +17,9 @@ fun DashboardScreen(
     modifier: Modifier = Modifier
 ) {
     PreviewScreen(
-        albums = emptyList(),
-        selectedAlbumId = null,
         photos = if (currentPhoto != null) listOf(currentPhoto) else emptyList(),
         currentIndex = 0,
         currentPhoto = currentPhoto,
-        onSelectAlbum = {},
         onSelectPhotoIndex = {},
         onPreviousPhoto = {},
         onNextPhoto = {},

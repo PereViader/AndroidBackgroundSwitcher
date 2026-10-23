@@ -13,6 +13,14 @@ interface PhotoDao {
     @Query("SELECT * FROM photos WHERE albumId = :albumId ORDER BY dateAdded DESC")
     fun getPhotosByAlbum(albumId: String): Flow<List<PhotoEntity>>
 
+    @Query("""
+        SELECT p.* FROM photos p 
+        INNER JOIN albums a ON p.albumId = a.id 
+        WHERE a.isSelected = 1 
+        ORDER BY p.dateAdded DESC
+    """)
+    fun getPhotosFromSelectedAlbums(): Flow<List<PhotoEntity>>
+
     @Query("SELECT * FROM photos WHERE id = :id LIMIT 1")
     suspend fun getPhotoById(id: String): PhotoEntity?
 

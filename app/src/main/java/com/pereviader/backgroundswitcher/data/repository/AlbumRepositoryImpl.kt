@@ -218,6 +218,12 @@ class AlbumRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun getPhotosFromSelectedAlbums(): Flow<List<PhotoItem>> {
+        return photoDao.getPhotosFromSelectedAlbums().map { entities ->
+            entities.map { it.toDomain() }
+        }
+    }
+
     override suspend fun deleteAlbum(albumId: String) {
         albumDao.deleteAlbum(albumId)
         photoDao.deletePhotosByAlbum(albumId)

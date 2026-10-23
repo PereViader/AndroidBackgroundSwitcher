@@ -13,6 +13,7 @@ interface AlbumRepository {
     suspend fun syncGooglePhotosAlbum(albumId: String): Result<Album>
     suspend fun syncAllSelectedAlbums()
     fun getPhotosInAlbum(albumId: String): Flow<List<PhotoItem>>
+    fun getPhotosFromSelectedAlbums(): Flow<List<PhotoItem>>
     suspend fun deleteAlbum(albumId: String)
     suspend fun importSharedPhotos(uris: List<String>, albumTitle: String? = null): Result<Album>
 }

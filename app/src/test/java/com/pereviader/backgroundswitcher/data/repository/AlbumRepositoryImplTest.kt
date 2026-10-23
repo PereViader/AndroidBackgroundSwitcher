@@ -235,4 +235,37 @@ class AlbumRepositoryImplTest {
             })
         }
     }
+
+    @Test
+    fun `getPhotosFromSelectedAlbums maps entities to domain photo items`() = runTest {
+        val photoEntities = listOf(
+            PhotoEntity(
+                id = "p1",
+                albumId = "album_1",
+                uri = "content://media/1",
+                width = 1080,
+                height = 1920,
+                isEnabled = true
+            ),
+            PhotoEntity(
+                id = "p2",
+                albumId = "album_2",
+                uri = "content://media/2",
+                width = 1080,
+                height = 1920,
+                isEnabled = false
+            )
+        )
+        coEvery { photoDao.getPhotosFromSelectedAlbums() } returns flowOf(photoEntities)
+
+        val result = repository.getPhotosFromSelectedAlbums()
+
+        result.collect { photos ->
+            assertThat(photos).hasSize(2)
+            assertThat(photos[0].id).isEqualTo("p1")
+            assertThat(photos[0].isEnabled).isTrue()
+            assertThat(photos[1].id).isEqualTo("p2")
+            assertThat(photos[1].isEnabled).isFalse()
+        }
+    }
 }

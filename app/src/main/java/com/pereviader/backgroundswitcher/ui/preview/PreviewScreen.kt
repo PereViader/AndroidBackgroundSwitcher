@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -31,13 +32,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallpaper
@@ -45,8 +43,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -88,8 +84,6 @@ import coil.request.SuccessResult
 import com.pereviader.backgroundswitcher.core.crop.CropCalculation
 import com.pereviader.backgroundswitcher.core.crop.ScreenDimensions
 import com.pereviader.backgroundswitcher.core.crop.ScreenMetricsHelper
-import com.pereviader.backgroundswitcher.core.model.Album
-import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
@@ -97,12 +91,9 @@ import kotlin.math.max
 
 @Composable
 fun PreviewScreen(
-    albums: List<Album>,
-    selectedAlbumId: String?,
     photos: List<PhotoItem>,
     currentIndex: Int,
     currentPhoto: PhotoItem?,
-    onSelectAlbum: (String) -> Unit,
     onSelectPhotoIndex: (Int) -> Unit,
     onPreviousPhoto: () -> Unit,
     onNextPhoto: () -> Unit,
@@ -207,13 +198,10 @@ fun PreviewScreen(
             }
         }
 
-        // Bottom-Docked Controls: Album Selector + Counter + Thumbnails
+        // Bottom-Docked Controls: Counter + Centered Filmstrip
         BottomBrowsingControls(
-            albums = albums,
-            selectedAlbumId = selectedAlbumId,
             photos = photos,
             currentIndex = currentIndex,
-            onSelectAlbum = onSelectAlbum,
             onSelectPhotoIndex = onSelectPhotoIndex
         )
     }
@@ -286,187 +274,98 @@ fun PreviewScreen(
 
 @Composable
 private fun BottomBrowsingControls(
-    albums: List<Album>,
-    selectedAlbumId: String?,
     photos: List<PhotoItem>,
     currentIndex: Int,
-    onSelectAlbum: (String) -> Unit,
     onSelectPhotoIndex: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var isAlbumMenuExpanded by remember { mutableStateOf(false) }
-    val currentAlbum = albums.firstOrNull { it.id == selectedAlbumId }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(currentIndex) {
+    LaunchedEffect(currentIndex, photos.size) {
         if (photos.isNotEmpty() && currentIndex in photos.indices) {
-            listState.animateScrollToItem(currentIndex)
-        }
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp, bottom = 2.dp)
-    ) {
-        // Row 1: Album Selector Dropdown & Photo Counter
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box {
-                FilledTonalButton(
-                    onClick = { isAlbumMenuExpanded = true },
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(34.dp)
-                ) {
-                    Icon(
-                        imageVector = if (currentAlbum?.source == AlbumSource.GOOGLE_PHOTOS_SHARE) Icons.Default.Cloud else Icons.Default.Folder,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = currentAlbum?.name ?: "Select Album",
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
+            val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == currentIndex }
+            if (itemInfo != null) {
+                val viewportWidth = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
+                if (viewportWidth > 0) {
+                    val itemCenter = itemInfo.offset + (itemInfo.size / 2)
+                    val targetCenter = viewportWidth / 2
+                    val delta = itemCenter - targetCenter
+                    if (delta != 0) {
+                        listState.animateScrollBy(delta.toFloat())
+                    }
                 }
-
-                DropdownMenu(
-                    expanded = isAlbumMenuExpanded,
-                    onDismissRequest = { isAlbumMenuExpanded = false }
-                ) {
-                    albums.forEach { album ->
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(album.name, style = MaterialTheme.typography.bodyMedium)
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Text(
-                                        "${album.photoCount} photos",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            onClick = {
-                                isAlbumMenuExpanded = false
-                                onSelectAlbum(album.id)
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = if (album.source == AlbumSource.GOOGLE_PHOTOS_SHARE) Icons.Default.Cloud else Icons.Default.Folder,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        )
+            } else {
+                listState.scrollToItem(currentIndex)
+                kotlinx.coroutines.delay(50)
+                val postItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == currentIndex }
+                if (postItem != null) {
+                    val viewportWidth = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
+                    if (viewportWidth > 0) {
+                        val itemCenter = postItem.offset + (postItem.size / 2)
+                        val targetCenter = viewportWidth / 2
+                        val delta = itemCenter - targetCenter
+                        if (delta != 0) {
+                            listState.animateScrollBy(delta.toFloat())
+                        }
                     }
                 }
             }
-
-            // Photo Counter & Included/Excluded Count
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = if (photos.isNotEmpty()) "${currentIndex + 1} / ${photos.size}" else "0 / 0",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                val activeCount = photos.count { it.isEnabled }
-                val excludedCount = photos.size - activeCount
-                Text(
-                    text = "$activeCount active${if (excludedCount > 0) ", $excludedCount off" else ""}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
+    }
 
-        // Row 2: Horizontal Photo Thumbnails Filmstrip
-        if (photos.isNotEmpty()) {
-            LazyRow(
-                state = listState,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp)
-            ) {
-                itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
-                    val isSelected = index == currentIndex
-                    Box(
-                        modifier = Modifier
-                            .size(width = 46.dp, height = 60.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(
-                                width = if (isSelected) 2.5.dp else 1.dp,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .clickable { onSelectPhotoIndex(index) }
-                    ) {
-                        AsyncImage(
-                            model = photo.uri,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    if (!photo.isEnabled) {
-                                        alpha = 0.45f
-                                    }
-                                }
+    if (photos.isNotEmpty()) {
+        LazyRow(
+            state = listState,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+        ) {
+            itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
+                val isSelected = index == currentIndex
+                Box(
+                    modifier = Modifier
+                        .size(width = 46.dp, height = 60.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(
+                            width = if (isSelected) 2.5.dp else 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                            shape = RoundedCornerShape(8.dp)
                         )
-
-                        if (!photo.isEnabled) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.4f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.error
-                                ) {
-                                    Text(
-                                        text = "OFF",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                        color = MaterialTheme.colorScheme.onError,
-                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                                    )
+                        .clickable { onSelectPhotoIndex(index) }
+                ) {
+                    AsyncImage(
+                        model = photo.uri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                if (!photo.isEnabled) {
+                                    alpha = 0.45f
                                 }
                             }
-                        }
+                    )
 
-                        Surface(
+                    if (!photo.isEnabled) {
+                        Box(
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(2.dp),
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color.Black.copy(alpha = 0.65f)
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "${index + 1}",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 2.dp)
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.error
+                            ) {
+                                Text(
+                                    text = "OFF",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                    color = MaterialTheme.colorScheme.onError,
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -802,7 +701,7 @@ private fun NoWallpaperPlaceholder() {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Select an album below or import photos in Albums tab",
+                text = "Select albums in the Albums tab to preview photos",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center

@@ -110,7 +110,6 @@ class MainActivity : ComponentActivity() {
 fun MainAppContent(viewModel: MainViewModel) {
     val albums by viewModel.albums.collectAsState()
     val settings by viewModel.settings.collectAsState()
-    val selectedAlbumId by viewModel.selectedPreviewAlbumId.collectAsState()
     val previewPhotos by viewModel.previewPhotos.collectAsState()
     val selectedPhotoIndex by viewModel.selectedPreviewPhotoIndex.collectAsState()
     val currentPhoto by viewModel.currentPreviewPhoto.collectAsState()
@@ -155,12 +154,9 @@ fun MainAppContent(viewModel: MainViewModel) {
     ) { innerPadding ->
         when (selectedTab) {
             0 -> PreviewScreen(
-                albums = albums,
-                selectedAlbumId = selectedAlbumId,
                 photos = previewPhotos,
                 currentIndex = selectedPhotoIndex,
                 currentPhoto = currentPhoto,
-                onSelectAlbum = { albumId -> viewModel.selectPreviewAlbum(albumId) },
                 onSelectPhotoIndex = { index -> viewModel.selectPreviewPhotoIndex(index) },
                 onPreviousPhoto = { viewModel.previousPreviewPhoto() },
                 onNextPhoto = { viewModel.nextPreviewPhoto() },
