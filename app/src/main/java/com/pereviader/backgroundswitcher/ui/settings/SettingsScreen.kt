@@ -122,6 +122,62 @@ fun SettingsScreen(
             }
         }
 
+        // Cycle on Screen Unlock Toggle
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Cycle on Screen Unlock", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Switch to a new wallpaper whenever you unlock or turn on your device (Live Wallpaper mode)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = settings.cycleOnUnlock,
+                    onCheckedChange = { onUpdateSettings(settings.copy(cycleOnUnlock = it)) }
+                )
+            }
+        }
+
+        // Double-Tap to Cycle Toggle
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Double-Tap to Cycle", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Double-tap an empty area on your home screen to switch wallpapers immediately (Live Wallpaper mode)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = settings.doubleTapToCycle,
+                    onCheckedChange = { onUpdateSettings(settings.copy(doubleTapToCycle = it)) }
+                )
+            }
+        }
+
         // Interval Setting
         Card(
             modifier = Modifier.fillMaxWidth(),

@@ -18,6 +18,8 @@ data class WallpaperSettings(
     val rotationOrder: RotationOrder = RotationOrder.LEAST_RECENTLY_USED,
     val onlyOnWifi: Boolean = true,
     val isEnabled: Boolean = true,
+    val cycleOnUnlock: Boolean = false,
+    val doubleTapToCycle: Boolean = true,
     val lastRotatedAt: Long = 0L,
     val currentWallpaperUri: String? = null,
     val currentPhotoId: String? = null

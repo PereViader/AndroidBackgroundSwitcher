@@ -2,6 +2,9 @@ package com.pereviader.backgroundswitcher.data.repository
 
 import android.content.Context
 import coil.ImageLoader
+import com.pereviader.backgroundswitcher.core.model.RotationOrder
+import com.pereviader.backgroundswitcher.core.model.TargetScreen
+import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 import com.pereviader.backgroundswitcher.core.wallpaper.WallpaperManagerHelper
 import com.pereviader.backgroundswitcher.data.local.datastore.PreferencesManager
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
@@ -183,5 +186,28 @@ class WallpaperRepositoryImplTest {
 
         coVerify { photoDao.deletePhotoById("photo_1") }
         coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
+    }
+
+    @Test
+    fun `updateSettings updates all preference values including cycleOnUnlock and doubleTapToCycle`() = runTest {
+        val settings = WallpaperSettings(
+            intervalMinutes = 30L,
+            targetScreen = TargetScreen.HOME,
+            rotationOrder = RotationOrder.RANDOM,
+            onlyOnWifi = false,
+            isEnabled = true,
+            cycleOnUnlock = true,
+            doubleTapToCycle = false
+        )
+
+        repository.updateSettings(settings)
+
+        coVerify { preferencesManager.updateInterval(30L) }
+        coVerify { preferencesManager.updateTargetScreen(TargetScreen.HOME) }
+        coVerify { preferencesManager.updateRotationOrder(RotationOrder.RANDOM) }
+        coVerify { preferencesManager.updateOnlyOnWifi(false) }
+        coVerify { preferencesManager.updateIsEnabled(true) }
+        coVerify { preferencesManager.updateCycleOnUnlock(true) }
+        coVerify { preferencesManager.updateDoubleTapToCycle(false) }
     }
 }

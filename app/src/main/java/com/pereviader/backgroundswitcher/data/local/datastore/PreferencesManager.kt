@@ -20,21 +20,26 @@ import javax.inject.Singleton
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "wallpaper_settings")
 
 @Singleton
-class PreferencesManager @Inject constructor(
-    @ApplicationContext private val context: Context
+class PreferencesManager internal constructor(
+    private val dataStore: DataStore<Preferences>
 ) {
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(context.dataStore)
+
     private object Keys {
         val INTERVAL_MINUTES = longPreferencesKey("interval_minutes")
         val TARGET_SCREEN = stringPreferencesKey("target_screen")
         val ROTATION_ORDER = stringPreferencesKey("rotation_order")
         val ONLY_ON_WIFI = booleanPreferencesKey("only_on_wifi")
         val IS_ENABLED = booleanPreferencesKey("is_enabled")
+        val CYCLE_ON_UNLOCK = booleanPreferencesKey("cycle_on_unlock")
+        val DOUBLE_TAP_TO_CYCLE = booleanPreferencesKey("double_tap_to_cycle")
         val LAST_ROTATED_AT = longPreferencesKey("last_rotated_at")
         val CURRENT_WALLPAPER_URI = stringPreferencesKey("current_wallpaper_uri")
         val CURRENT_PHOTO_ID = stringPreferencesKey("current_photo_id")
     }
 
-    val settingsFlow: Flow<WallpaperSettings> = context.dataStore.data.map { preferences ->
+    val settingsFlow: Flow<WallpaperSettings> = dataStore.data.map { preferences ->
         WallpaperSettings(
             intervalMinutes = preferences[Keys.INTERVAL_MINUTES] ?: 60L,
             targetScreen = preferences[Keys.TARGET_SCREEN]?.let {
@@ -45,6 +50,8 @@ class PreferencesManager @Inject constructor(
             } ?: RotationOrder.LEAST_RECENTLY_USED,
             onlyOnWifi = preferences[Keys.ONLY_ON_WIFI] ?: true,
             isEnabled = preferences[Keys.IS_ENABLED] ?: true,
+            cycleOnUnlock = preferences[Keys.CYCLE_ON_UNLOCK] ?: false,
+            doubleTapToCycle = preferences[Keys.DOUBLE_TAP_TO_CYCLE] ?: true,
             lastRotatedAt = preferences[Keys.LAST_ROTATED_AT] ?: 0L,
             currentWallpaperUri = preferences[Keys.CURRENT_WALLPAPER_URI],
             currentPhotoId = preferences[Keys.CURRENT_PHOTO_ID]
@@ -52,27 +59,35 @@ class PreferencesManager @Inject constructor(
     }
 
     suspend fun updateInterval(minutes: Long) {
-        context.dataStore.edit { it[Keys.INTERVAL_MINUTES] = minutes }
+        dataStore.edit { it[Keys.INTERVAL_MINUTES] = minutes }
     }
 
     suspend fun updateTargetScreen(target: TargetScreen) {
-        context.dataStore.edit { it[Keys.TARGET_SCREEN] = target.name }
+        dataStore.edit { it[Keys.TARGET_SCREEN] = target.name }
     }
 
     suspend fun updateRotationOrder(order: RotationOrder) {
-        context.dataStore.edit { it[Keys.ROTATION_ORDER] = order.name }
+        dataStore.edit { it[Keys.ROTATION_ORDER] = order.name }
     }
 
     suspend fun updateOnlyOnWifi(onlyWifi: Boolean) {
-        context.dataStore.edit { it[Keys.ONLY_ON_WIFI] = onlyWifi }
+        dataStore.edit { it[Keys.ONLY_ON_WIFI] = onlyWifi }
     }
 
     suspend fun updateIsEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.IS_ENABLED] = enabled }
+        dataStore.edit { it[Keys.IS_ENABLED] = enabled }
+    }
+
+    suspend fun updateCycleOnUnlock(cycleOnUnlock: Boolean) {
+        dataStore.edit { it[Keys.CYCLE_ON_UNLOCK] = cycleOnUnlock }
+    }
+
+    suspend fun updateDoubleTapToCycle(enabled: Boolean) {
+        dataStore.edit { it[Keys.DOUBLE_TAP_TO_CYCLE] = enabled }
     }
 
     suspend fun updateLastRotated(timestamp: Long, uri: String?, photoId: String? = null) {
-        context.dataStore.edit {
+        dataStore.edit {
             it[Keys.LAST_ROTATED_AT] = timestamp
             if (uri != null) it[Keys.CURRENT_WALLPAPER_URI] = uri
             if (photoId != null) it[Keys.CURRENT_PHOTO_ID] = photoId

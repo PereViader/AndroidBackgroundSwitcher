@@ -56,6 +56,8 @@ class WallpaperRepositoryImpl @Inject constructor(
         preferencesManager.updateRotationOrder(settings.rotationOrder)
         preferencesManager.updateOnlyOnWifi(settings.onlyOnWifi)
         preferencesManager.updateIsEnabled(settings.isEnabled)
+        preferencesManager.updateCycleOnUnlock(settings.cycleOnUnlock)
+        preferencesManager.updateDoubleTapToCycle(settings.doubleTapToCycle)
     }
 
     override suspend fun getNextCandidatePhoto(): PhotoItem? = withContext(Dispatchers.IO) {

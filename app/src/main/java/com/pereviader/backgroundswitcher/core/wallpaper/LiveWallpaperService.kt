@@ -6,15 +6,22 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import com.pereviader.backgroundswitcher.core.crop.CenterCropEngine
+import com.pereviader.backgroundswitcher.core.crop.ScreenMetricsHelper
+import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
+import com.pereviader.backgroundswitcher.domain.repository.WallpaperRepository
 import com.pereviader.backgroundswitcher.domain.usecase.CycleWallpaperUseCase
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -23,6 +30,13 @@ class LiveWallpaperService : WallpaperService() {
 
     @Inject
     lateinit var cycleWallpaperUseCase: CycleWallpaperUseCase
+
+    @Inject
+    lateinit var wallpaperRepository: WallpaperRepository
+
+    companion object {
+        private const val UNLOCK_DEBOUNCE_MILLIS = 3000L
+    }
 
     override fun onCreateEngine(): Engine {
         return LiveWallpaperEngine()
@@ -35,16 +49,66 @@ class LiveWallpaperService : WallpaperService() {
         private var currentBitmap: Bitmap? = null
         private var surfaceWidth = 0
         private var surfaceHeight = 0
+        private var lastCycleTime = 0L
+        private var isCycling = false
+        private var currentSettings: WallpaperSettings = WallpaperSettings()
+
+        private val gestureDetector = GestureDetector(
+            this@LiveWallpaperService,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    if (currentSettings.doubleTapToCycle && currentSettings.isEnabled) {
+                        cycleWallpaper()
+                        return true
+                    }
+                    return super.onDoubleTap(e)
+                }
+            }
+        )
 
         private val drawRunnable = Runnable {
             cycleWallpaper()
         }
 
+        override fun onCreate(holder: SurfaceHolder) {
+            super.onCreate(holder)
+            setTouchEventsEnabled(true)
+            engineScope.launch {
+                wallpaperRepository.getSettings().collect { settings ->
+                    currentSettings = settings
+                }
+            }
+        }
+
+        override fun onTouchEvent(event: MotionEvent) {
+            gestureDetector.onTouchEvent(event)
+            super.onTouchEvent(event)
+        }
+
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
+            val transitionedToVisible = visible && !isVisible
             isVisible = visible
             if (visible) {
-                drawFrame()
+                if (transitionedToVisible) {
+                    engineScope.launch {
+                        val settings = wallpaperRepository.getSettings().first()
+                        currentSettings = settings
+                        val now = SystemClock.elapsedRealtime()
+                        val shouldCycleOnUnlock = settings.isEnabled && settings.cycleOnUnlock &&
+                            (now - lastCycleTime >= UNLOCK_DEBOUNCE_MILLIS)
+                        val isInitialLoad = currentBitmap == null
+
+                        if (isInitialLoad || shouldCycleOnUnlock) {
+                            lastCycleTime = now
+                            cycleWallpaper()
+                        } else {
+                            drawFrame()
+                        }
+                    }
+                } else {
+                    drawFrame()
+                }
             } else {
                 handler.removeCallbacks(drawRunnable)
             }
@@ -59,7 +123,11 @@ class LiveWallpaperService : WallpaperService() {
             super.onSurfaceChanged(holder, format, width, height)
             surfaceWidth = width
             surfaceHeight = height
-            drawFrame()
+            if (isVisible && currentBitmap == null) {
+                cycleWallpaper()
+            } else {
+                drawFrame()
+            }
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder?) {
@@ -77,16 +145,23 @@ class LiveWallpaperService : WallpaperService() {
         }
 
         private fun cycleWallpaper() {
-            if (!isVisible) return
+            if (!isVisible || isCycling) return
+            isCycling = true
+            val width = if (surfaceWidth > 0) surfaceWidth else ScreenMetricsHelper.getScreenDimensions(this@LiveWallpaperService).width
+            val height = if (surfaceHeight > 0) surfaceHeight else ScreenMetricsHelper.getScreenDimensions(this@LiveWallpaperService).height
             engineScope.launch {
-                val nextBitmap = cycleWallpaperUseCase.loadNextCandidateBitmap(
-                    targetWidth = surfaceWidth,
-                    targetHeight = surfaceHeight
-                )
-                if (nextBitmap != null) {
-                    currentBitmap?.recycle()
-                    currentBitmap = nextBitmap
-                    drawFrame()
+                try {
+                    val nextBitmap = cycleWallpaperUseCase.loadNextCandidateBitmap(
+                        targetWidth = width,
+                        targetHeight = height
+                    )
+                    if (nextBitmap != null) {
+                        currentBitmap?.recycle()
+                        currentBitmap = nextBitmap
+                        drawFrame()
+                    }
+                } finally {
+                    isCycling = false
                 }
             }
         }
