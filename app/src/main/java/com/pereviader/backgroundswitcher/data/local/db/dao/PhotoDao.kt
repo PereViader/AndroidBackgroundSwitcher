@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -28,6 +27,15 @@ interface PhotoDao {
 
     @Query("SELECT * FROM photos WHERE albumId = :albumId")
     suspend fun getPhotosListByAlbum(albumId: String): List<PhotoEntity>
+
+    @Query("SELECT * FROM photos")
+    suspend fun getAllPhotos(): List<PhotoEntity>
+
+    @Query("UPDATE photos SET cropX = :cropX, cropY = :cropY, zoom = :zoom WHERE id = :id")
+    suspend fun updateCustomization(id: String, cropX: Float?, cropY: Float?, zoom: Float?)
+
+    @Query("UPDATE photos SET cropX = :cropX, cropY = :cropY, zoom = :zoom WHERE uri = :uri")
+    suspend fun updateCustomizationByUri(uri: String, cropX: Float?, cropY: Float?, zoom: Float?)
 
     @Query("UPDATE photos SET cropX = :cropX, cropY = :cropY WHERE id = :id")
     suspend fun updateCrop(id: String, cropX: Float?, cropY: Float?)
@@ -73,4 +81,16 @@ interface PhotoDao {
 
     @Query("DELETE FROM photos WHERE albumId = :albumId")
     suspend fun deletePhotosByAlbum(albumId: String)
+
+    @Query("DELETE FROM photos WHERE id = :id")
+    suspend fun deletePhotoById(id: String): Int
+
+    @Query("DELETE FROM photos WHERE id IN (:ids)")
+    suspend fun deletePhotosByIds(ids: List<String>): Int
+
+    @Query("DELETE FROM photos WHERE uri = :uri")
+    suspend fun deletePhotoByUri(uri: String): Int
+
+    @Query("DELETE FROM photos WHERE uri IN (:uris)")
+    suspend fun deletePhotosByUris(uris: List<String>): Int
 }

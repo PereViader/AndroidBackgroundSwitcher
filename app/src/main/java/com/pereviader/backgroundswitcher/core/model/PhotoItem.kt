@@ -9,5 +9,6 @@ data class PhotoItem(
     val dateAdded: Long = System.currentTimeMillis(),
     val lastDisplayedAt: Long = 0L,
     val cropX: Float? = null,
-    val cropY: Float? = null
+    val cropY: Float? = null,
+    val zoom: Float? = null
 )

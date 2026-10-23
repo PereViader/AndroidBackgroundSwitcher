@@ -3,7 +3,9 @@ package com.pereviader.backgroundswitcher.data.repository
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
 import android.util.Log
+import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
 import coil.request.ErrorResult
 import coil.request.ImageRequest
@@ -16,6 +18,8 @@ import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 import com.pereviader.backgroundswitcher.core.wallpaper.WallpaperManagerHelper
 import com.pereviader.backgroundswitcher.data.local.datastore.PreferencesManager
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
+import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizationDao
+import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperCustomizationEntity
 import com.pereviader.backgroundswitcher.domain.repository.WallpaperRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +30,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,6 +39,7 @@ class WallpaperRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferencesManager: PreferencesManager,
     private val photoDao: PhotoDao,
+    private val wallpaperCustomizationDao: WallpaperCustomizationDao,
     private val wallpaperManagerHelper: WallpaperManagerHelper,
     private val imageLoader: ImageLoader
 ) : WallpaperRepository {
@@ -70,7 +76,8 @@ class WallpaperRepositoryImpl @Inject constructor(
                 dateAdded = it.dateAdded,
                 lastDisplayedAt = it.lastDisplayedAt,
                 cropX = it.cropX,
-                cropY = it.cropY
+                cropY = it.cropY,
+                zoom = it.zoom
             )
         }
     }
@@ -91,24 +98,29 @@ class WallpaperRepositoryImpl @Inject constructor(
             if (result !is SuccessResult) {
                 val error = (result as? ErrorResult)?.throwable
                 Log.e(TAG, "Failed to load image from ${photo.uri}", error)
+                // If the image is no longer accessible, clean it up and remove its customization
+                if (!isPhotoReferenceable(photo.uri)) {
+                    deleteUnreferenceablePhoto(photo.id, photo.uri)
+                }
                 return@withContext null
             }
 
             val sourceBitmap = (result.drawable as? BitmapDrawable)?.bitmap
-            if (sourceBitmap == null) {
-                Log.e(TAG, "Loaded drawable is not a BitmapDrawable for ${photo.uri}")
-                return@withContext null
-            }
+                ?: result.drawable.toBitmap()
 
             CenterCropEngine.createCoverBitmap(
                 source = sourceBitmap,
                 targetWidth = targetWidth,
                 targetHeight = targetHeight,
                 cropX = photo.cropX,
-                cropY = photo.cropY
+                cropY = photo.cropY,
+                zoom = photo.zoom
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error in loadAndCropBitmap for ${photo.uri}", e)
+            if (!isPhotoReferenceable(photo.uri)) {
+                deleteUnreferenceablePhoto(photo.id, photo.uri)
+            }
             null
         }
     }
@@ -143,19 +155,67 @@ class WallpaperRepositoryImpl @Inject constructor(
                 dateAdded = it.dateAdded,
                 lastDisplayedAt = it.lastDisplayedAt,
                 cropX = it.cropX,
-                cropY = it.cropY
+                cropY = it.cropY,
+                zoom = it.zoom
             )
         }
     }
 
-    override suspend fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?) = withContext(Dispatchers.IO) {
-        photoDao.updateCrop(photoId, cropX, cropY)
-        val settings = preferencesManager.settingsFlow.first()
+    override suspend fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?) {
+        updatePhotoCustomization(photoId, cropX, cropY, null)
+    }
+
+    override suspend fun updatePhotoCustomization(
+        photoId: String,
+        cropX: Float?,
+        cropY: Float?,
+        zoom: Float?
+    ) = withContext(Dispatchers.IO) {
         val photo = photoDao.getPhotoById(photoId)
-        val isCurrent = settings.currentPhotoId == photoId || (photo != null && settings.currentWallpaperUri == photo.uri)
+        val uri = photo?.uri
+        val isDefault = cropX == null && cropY == null && (zoom == null || zoom <= 1.001f)
+
+        if (uri != null) {
+            if (isDefault) {
+                wallpaperCustomizationDao.deleteCustomization(uri)
+                photoDao.updateCustomizationByUri(uri, null, null, null)
+            } else {
+                wallpaperCustomizationDao.insertOrUpdate(
+                    WallpaperCustomizationEntity(
+                        imageUri = uri,
+                        cropX = cropX,
+                        cropY = cropY,
+                        zoom = zoom,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+                photoDao.updateCustomizationByUri(uri, cropX, cropY, zoom)
+            }
+        } else {
+            photoDao.updateCustomization(photoId, cropX, cropY, zoom)
+        }
+
+        val settings = preferencesManager.settingsFlow.first()
+        val isCurrent = settings.currentPhotoId == photoId || (uri != null && settings.currentWallpaperUri == uri)
         if (isCurrent) {
             reapplyCurrentWallpaper()
         }
+        Unit
+    }
+
+    override suspend fun deleteUnreferenceablePhoto(photoId: String, uri: String) = withContext(Dispatchers.IO) {
+        photoDao.deletePhotoById(photoId)
+        wallpaperCustomizationDao.deleteOrphanedCustomizations()
+        Unit
+    }
+
+    override suspend fun cleanupUnreferenceableCustomizations() = withContext(Dispatchers.IO) {
+        val allPhotos = photoDao.getAllPhotos()
+        val toDelete = allPhotos.filter { !isPhotoReferenceable(it.uri) }
+        if (toDelete.isNotEmpty()) {
+            photoDao.deletePhotosByIds(toDelete.map { it.id })
+        }
+        wallpaperCustomizationDao.deleteOrphanedCustomizations()
         Unit
     }
 
@@ -174,7 +234,8 @@ class WallpaperRepositoryImpl @Inject constructor(
             dateAdded = entity.dateAdded,
             lastDisplayedAt = entity.lastDisplayedAt,
             cropX = entity.cropX,
-            cropY = entity.cropY
+            cropY = entity.cropY,
+            zoom = entity.zoom
         )
 
         val dimensions = ScreenMetricsHelper.getScreenDimensions(context)
@@ -184,5 +245,23 @@ class WallpaperRepositoryImpl @Inject constructor(
         val result = applyWallpaper(bitmap)
         bitmap.recycle()
         result
+    }
+
+    private fun isPhotoReferenceable(uriString: String): Boolean {
+        return try {
+            val uri = Uri.parse(uriString)
+            when (uri.scheme) {
+                "content" -> {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                }
+                "file" -> {
+                    File(uri.path ?: "").exists()
+                }
+                "http", "https" -> true
+                else -> false
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 }

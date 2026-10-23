@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
     tableName = "photos",
     indices = [
         Index(value = ["albumId"]),
-        Index(value = ["lastDisplayedAt"])
+        Index(value = ["lastDisplayedAt"]),
+        Index(value = ["uri"])
     ]
 )
 data class PhotoEntity(
@@ -21,5 +22,6 @@ data class PhotoEntity(
     val dateAdded: Long = System.currentTimeMillis(),
     val lastDisplayedAt: Long = 0L,
     val cropX: Float? = null,
-    val cropY: Float? = null
+    val cropY: Float? = null,
+    val zoom: Float? = null
 )

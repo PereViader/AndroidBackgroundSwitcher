@@ -13,6 +13,9 @@ interface WallpaperRepository {
     suspend fun applyWallpaper(bitmap: Bitmap): Result<Unit>
     suspend fun markPhotoDisplayed(photoId: String)
     suspend fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?)
+    suspend fun updatePhotoCustomization(photoId: String, cropX: Float?, cropY: Float?, zoom: Float?)
+    suspend fun deleteUnreferenceablePhoto(photoId: String, uri: String)
+    suspend fun cleanupUnreferenceableCustomizations()
     suspend fun reapplyCurrentWallpaper(): Result<Unit>
     fun getCurrentPhoto(): Flow<PhotoItem?>
 }

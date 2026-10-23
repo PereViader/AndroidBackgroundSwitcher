@@ -84,10 +84,14 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?) {
+    fun updatePhotoCustomization(photoId: String, cropX: Float?, cropY: Float?, zoom: Float?) {
         viewModelScope.launch {
-            wallpaperRepository.updatePhotoCrop(photoId, cropX, cropY)
+            wallpaperRepository.updatePhotoCustomization(photoId, cropX, cropY, zoom)
         }
+    }
+
+    fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?) {
+        updatePhotoCustomization(photoId, cropX, cropY, null)
     }
 
     fun updateSettings(newSettings: WallpaperSettings) {

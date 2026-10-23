@@ -11,8 +11,8 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -32,7 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreContentObserver
 import com.pereviader.backgroundswitcher.ui.albums.AlbumSelectionScreen
-import com.pereviader.backgroundswitcher.ui.dashboard.DashboardScreen
+import com.pereviader.backgroundswitcher.ui.preview.PreviewScreen
 import com.pereviader.backgroundswitcher.ui.settings.SettingsScreen
 import com.pereviader.backgroundswitcher.ui.theme.BackgroundSwitcherTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -132,8 +132,8 @@ fun MainAppContent(viewModel: MainViewModel) {
                 NavigationBarItem(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                    label = { Text("Dashboard") }
+                    icon = { Icon(Icons.Default.Preview, contentDescription = "Preview") },
+                    label = { Text("Preview") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
@@ -151,15 +151,15 @@ fun MainAppContent(viewModel: MainViewModel) {
         }
     ) { innerPadding ->
         when (selectedTab) {
-            0 -> DashboardScreen(
+            0 -> PreviewScreen(
                 settings = settings,
                 currentPhoto = previewPhoto,
                 onTriggerCycleNow = { viewModel.triggerImmediateCycle() },
-                onCropChanged = { photoId, cropX, cropY ->
-                    viewModel.updatePhotoCrop(photoId, cropX, cropY)
+                onCustomizationChanged = { photoId, cropX, cropY, zoom ->
+                    viewModel.updatePhotoCustomization(photoId, cropX, cropY, zoom)
                 },
-                onResetCrop = { photoId ->
-                    viewModel.updatePhotoCrop(photoId, null, null)
+                onResetCustomization = { photoId ->
+                    viewModel.updatePhotoCustomization(photoId, null, null, null)
                 },
                 modifier = Modifier.padding(innerPadding)
             )

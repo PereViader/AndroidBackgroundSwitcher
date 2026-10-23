@@ -6,12 +6,16 @@ import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import com.pereviader.backgroundswitcher.data.local.db.dao.AlbumDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
+import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizationDao
 import com.pereviader.backgroundswitcher.data.local.db.entity.AlbumEntity
+import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
+import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperCustomizationEntity
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreAlbumScanner
 import com.pereviader.backgroundswitcher.data.remote.GooglePhotosShareParser
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -20,6 +24,7 @@ class AlbumRepositoryImplTest {
 
     private lateinit var albumDao: AlbumDao
     private lateinit var photoDao: PhotoDao
+    private lateinit var wallpaperCustomizationDao: WallpaperCustomizationDao
     private lateinit var mediaStoreScanner: MediaStoreAlbumScanner
     private lateinit var googlePhotosParser: GooglePhotosShareParser
     private lateinit var repository: AlbumRepositoryImpl
@@ -28,12 +33,14 @@ class AlbumRepositoryImplTest {
     fun setUp() {
         albumDao = mockk(relaxed = true)
         photoDao = mockk(relaxed = true)
+        wallpaperCustomizationDao = mockk(relaxed = true)
         mediaStoreScanner = mockk(relaxed = true)
         googlePhotosParser = mockk(relaxed = true)
 
         repository = AlbumRepositoryImpl(
             albumDao = albumDao,
             photoDao = photoDao,
+            wallpaperCustomizationDao = wallpaperCustomizationDao,
             mediaStoreScanner = mediaStoreScanner,
             googlePhotosParser = googlePhotosParser
         )
@@ -68,10 +75,11 @@ class AlbumRepositoryImplTest {
 
         coVerify { albumDao.insertOrUpdate(match { it.id == "gp_123" && it.sourceUrl == testUrl }) }
         coVerify { photoDao.insertOrUpdateAll(match { it.size == 2 }) }
+        coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
     }
 
     @Test
-    fun `syncGooglePhotosAlbum refreshes photos using saved sourceUrl`() = runTest {
+    fun `syncGooglePhotosAlbum refreshes photos using saved sourceUrl and restores customizations`() = runTest {
         val albumId = "gp_123"
         val savedUrl = "https://photos.app.goo.gl/myAlbum"
         val existingEntity = AlbumEntity(
@@ -86,6 +94,12 @@ class AlbumRepositoryImplTest {
         )
 
         coEvery { albumDao.getAlbumById(albumId) } returns existingEntity
+        coEvery { wallpaperCustomizationDao.getCustomization("https://lh3.googleusercontent.com/1=s2560") } returns WallpaperCustomizationEntity(
+            imageUri = "https://lh3.googleusercontent.com/1=s2560",
+            cropX = 0.2f,
+            cropY = 0.8f,
+            zoom = 1.5f
+        )
 
         val refreshedAlbum = Album(
             id = albumId,
@@ -113,14 +127,63 @@ class AlbumRepositoryImplTest {
         assertThat(result.getOrNull()?.photoCount).isEqualTo(3)
 
         coVerify { photoDao.deletePhotosByAlbum(albumId) }
-        coVerify { photoDao.insertOrUpdateAll(match { it.size == 3 }) }
+        coVerify {
+            photoDao.insertOrUpdateAll(match { list ->
+                val p1 = list.first { it.id == "p1" }
+                p1.cropX == 0.2f && p1.cropY == 0.8f && p1.zoom == 1.5f
+            })
+        }
+        coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
     }
 
     @Test
-    fun `deleteAlbum deletes both album and photos`() = runTest {
+    fun `deleteAlbum deletes album, photos, and removes orphaned customizations`() = runTest {
         repository.deleteAlbum("gp_123")
 
         coVerify { albumDao.deleteAlbum("gp_123") }
         coVerify { photoDao.deletePhotosByAlbum("gp_123") }
+        coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
+    }
+
+    @Test
+    fun `refreshDeviceAlbums deletes photos no longer in MediaStore and cleans up customizations`() = runTest {
+        val albumId = "local_1"
+        val existingAlbums = listOf(
+            AlbumEntity(
+                id = albumId,
+                name = "Camera",
+                coverUri = "uri1",
+                photoCount = 2,
+                source = AlbumSource.LOCAL_MEDIASTORE.name,
+                isSelected = true
+            )
+        )
+        coEvery { albumDao.getAllAlbums() } returns flowOf(existingAlbums)
+        coEvery { mediaStoreScanner.scanAlbums() } returns listOf(
+            Album(
+                id = albumId,
+                name = "Camera",
+                coverUri = "uri1",
+                photoCount = 1,
+                source = AlbumSource.LOCAL_MEDIASTORE,
+                isSelected = true
+            )
+        )
+
+        // DB previously had p1 and p2; MediaStore now only has p1 (p2 was deleted from device)
+        val existingPhotosInDb = listOf(
+            PhotoEntity(id = "p1", albumId = albumId, uri = "content://media/1"),
+            PhotoEntity(id = "p2", albumId = albumId, uri = "content://media/2")
+        )
+        coEvery { photoDao.getPhotosListByAlbum(albumId) } returns existingPhotosInDb
+        coEvery { mediaStoreScanner.getPhotosInAlbum(albumId) } returns listOf(
+            PhotoItem(id = "p1", albumId = albumId, uri = "content://media/1")
+        )
+
+        repository.refreshDeviceAlbums()
+
+        // p2 should be deleted from DB
+        coVerify { photoDao.deletePhotosByIds(listOf("p2")) }
+        coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
     }
 }

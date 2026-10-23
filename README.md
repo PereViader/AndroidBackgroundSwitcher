@@ -66,7 +66,7 @@ AndroidBackgroundSwitcher/
 │   │   │   │   │   └── repository/     # Repository implementations
 │   │   │   │   ├── di/                 # Hilt Dependency Injection Modules
 │   │   │   │   ├── domain/             # Repository interfaces & Use Cases
-│   │   │   │   └── ui/                 # Jetpack Compose UI (Dashboard, Albums, Settings)
+│   │   │   │   └── ui/                 # Jetpack Compose UI (Preview, Albums, Settings)
 │   │   │   └── res/                    # Drawables, Themes, Icons, Wallpaper XML
 │   │   └── test/                       # Unit tests (CenterCropEngineTest)
 │   └── build.gradle.kts

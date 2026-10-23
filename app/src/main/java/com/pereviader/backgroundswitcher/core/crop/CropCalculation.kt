@@ -14,15 +14,16 @@ data class CropDimensions(
 object CropCalculation {
 
     /**
-     * Calculates the CSS "object-fit: cover" transformation for an image of dimensions
-     * (sourceWidth, sourceHeight) to fill target dimensions (targetWidth, targetHeight).
+     * Calculates the transformation for an image of dimensions (sourceWidth, sourceHeight)
+     * to fill target dimensions (targetWidth, targetHeight).
      *
      * In cover behavior:
      * 1. The aspect ratio is strictly preserved.
      * 2. The scaled image covers the entire target area (no empty bars / letterboxing).
-     * 3. When [cropX] and [cropY] are null, the image is centered along the excess dimension.
+     * 3. [zoom] (coerced >= 1.0f) scales the image beyond base cover, allowing two-finger pinch-to-zoom.
+     * 4. When [cropX] and [cropY] are null, the image is centered along the excess dimension.
      *    When provided (normalized 0.0f..1.0f), the excess is offset accordingly while strictly
-     *    ensuring the target bounds are completely covered.
+     *    ensuring the target bounds are completely covered at all times.
      */
     fun calculateCoverCrop(
         sourceWidth: Int,
@@ -30,16 +31,20 @@ object CropCalculation {
         targetWidth: Int,
         targetHeight: Int,
         cropX: Float? = null,
-        cropY: Float? = null
+        cropY: Float? = null,
+        zoom: Float? = null
     ): CropDimensions {
         require(sourceWidth > 0 && sourceHeight > 0) { "Source dimensions must be positive" }
         require(targetWidth > 0 && targetHeight > 0) { "Target dimensions must be positive" }
 
+        val effectiveZoom = (zoom ?: 1.0f).coerceIn(1.0f, 10.0f)
+
         val scaleX = targetWidth.toFloat() / sourceWidth.toFloat()
         val scaleY = targetHeight.toFloat() / sourceHeight.toFloat()
 
-        // Choose the larger scale factor to ensure the entire target is covered
-        val scale = max(scaleX, scaleY)
+        // Choose the larger scale factor to ensure the entire target is covered, multiplied by zoom
+        val baseScale = max(scaleX, scaleY)
+        val scale = baseScale * effectiveZoom
 
         val scaledWidth = max(targetWidth, (sourceWidth * scale).roundToInt())
         val scaledHeight = max(targetHeight, (sourceHeight * scale).roundToInt())

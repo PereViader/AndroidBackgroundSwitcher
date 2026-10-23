@@ -5,6 +5,7 @@ import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import com.pereviader.backgroundswitcher.data.local.db.dao.AlbumDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
+import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizationDao
 import com.pereviader.backgroundswitcher.data.local.db.entity.AlbumEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreAlbumScanner
@@ -20,6 +21,7 @@ import javax.inject.Singleton
 class AlbumRepositoryImpl @Inject constructor(
     private val albumDao: AlbumDao,
     private val photoDao: PhotoDao,
+    private val wallpaperCustomizationDao: WallpaperCustomizationDao,
     private val mediaStoreScanner: MediaStoreAlbumScanner,
     private val googlePhotosParser: GooglePhotosShareParser
 ) : AlbumRepository {
@@ -58,18 +60,32 @@ class AlbumRepositoryImpl @Inject constructor(
         // For selected local albums, sync their photos
         val selectedAlbumIds = entitiesToSave.filter { it.isSelected }.map { it.id }
         for (albumId in selectedAlbumIds) {
-            val photos = mediaStoreScanner.getPhotosInAlbum(albumId)
-            val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.id }
-            val photosToSave = photos.map { photo ->
-                val existing = existingPhotos[photo.id]
+            val scannedPhotos = mediaStoreScanner.getPhotosInAlbum(albumId)
+            val existingDbPhotos = photoDao.getPhotosListByAlbum(albumId)
+            val scannedIds = scannedPhotos.map { it.id }.toSet()
+
+            // Delete photos from DB that are no longer in MediaStore (deleted from device)
+            val toDelete = existingDbPhotos.filter { it.id !in scannedIds }
+            if (toDelete.isNotEmpty()) {
+                photoDao.deletePhotosByIds(toDelete.map { it.id })
+            }
+
+            val existingPhotosMap = existingDbPhotos.associateBy { it.id }
+            val photosToSave = scannedPhotos.map { photo ->
+                val existing = existingPhotosMap[photo.id]
+                val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
                 photo.toEntity().copy(
-                    cropX = existing?.cropX,
-                    cropY = existing?.cropY,
+                    cropX = customization?.cropX ?: existing?.cropX,
+                    cropY = customization?.cropY ?: existing?.cropY,
+                    zoom = customization?.zoom ?: existing?.zoom,
                     lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
                 )
             }
             photoDao.insertOrUpdateAll(photosToSave)
         }
+
+        // Clean up any customizations whose images no longer exist in any album
+        wallpaperCustomizationDao.deleteOrphanedCustomizations()
     }
 
     override suspend fun toggleAlbumSelection(albumId: String, isSelected: Boolean) {
@@ -81,9 +97,11 @@ class AlbumRepositoryImpl @Inject constructor(
                 val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.id }
                 val photosToSave = photos.map { photo ->
                     val existing = existingPhotos[photo.id]
+                    val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
                     photo.toEntity().copy(
-                        cropX = existing?.cropX,
-                        cropY = existing?.cropY,
+                        cropX = customization?.cropX ?: existing?.cropX,
+                        cropY = customization?.cropY ?: existing?.cropY,
+                        zoom = customization?.zoom ?: existing?.zoom,
                         lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
                     )
                 }
@@ -98,7 +116,16 @@ class AlbumRepositoryImpl @Inject constructor(
             val albumEntity = parsed.album.toEntity().copy(isSelected = true)
             albumDao.insertOrUpdate(albumEntity)
             photoDao.deletePhotosByAlbum(parsed.album.id)
-            photoDao.insertOrUpdateAll(parsed.photos.map { it.toEntity() })
+            val photosToSave = parsed.photos.map { photo ->
+                val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
+                photo.toEntity().copy(
+                    cropX = customization?.cropX,
+                    cropY = customization?.cropY,
+                    zoom = customization?.zoom
+                )
+            }
+            photoDao.insertOrUpdateAll(photosToSave)
+            wallpaperCustomizationDao.deleteOrphanedCustomizations()
             parsed.album.copy(isSelected = true)
         }
     }
@@ -120,15 +147,18 @@ class AlbumRepositoryImpl @Inject constructor(
             val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.uri }
             val photosToSave = parsed.photos.map { photo ->
                 val existing = existingPhotos[photo.uri]
+                val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
                 photo.toEntity().copy(
-                    cropX = existing?.cropX,
-                    cropY = existing?.cropY,
+                    cropX = customization?.cropX ?: existing?.cropX,
+                    cropY = customization?.cropY ?: existing?.cropY,
+                    zoom = customization?.zoom ?: existing?.zoom,
                     lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
                 )
             }
             albumDao.insertOrUpdate(updatedEntity)
             photoDao.deletePhotosByAlbum(albumId)
             photoDao.insertOrUpdateAll(photosToSave)
+            wallpaperCustomizationDao.deleteOrphanedCustomizations()
             updatedEntity.toDomain()
         }
     }
@@ -138,21 +168,31 @@ class AlbumRepositoryImpl @Inject constructor(
         for (album in selected) {
             when (album.source) {
                 AlbumSource.LOCAL_MEDIASTORE.name -> {
-                    val photos = mediaStoreScanner.getPhotosInAlbum(album.id)
-                    val existingPhotos = photoDao.getPhotosListByAlbum(album.id).associateBy { it.id }
-                    val photosToSave = photos.map { photo ->
-                        val existing = existingPhotos[photo.id]
+                    val scannedPhotos = mediaStoreScanner.getPhotosInAlbum(album.id)
+                    val existingDbPhotos = photoDao.getPhotosListByAlbum(album.id)
+                    val scannedIds = scannedPhotos.map { it.id }.toSet()
+
+                    val toDelete = existingDbPhotos.filter { it.id !in scannedIds }
+                    if (toDelete.isNotEmpty()) {
+                        photoDao.deletePhotosByIds(toDelete.map { it.id })
+                    }
+
+                    val existingPhotosMap = existingDbPhotos.associateBy { it.id }
+                    val photosToSave = scannedPhotos.map { photo ->
+                        val existing = existingPhotosMap[photo.id]
+                        val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
                         photo.toEntity().copy(
-                            cropX = existing?.cropX,
-                            cropY = existing?.cropY,
+                            cropX = customization?.cropX ?: existing?.cropX,
+                            cropY = customization?.cropY ?: existing?.cropY,
+                            zoom = customization?.zoom ?: existing?.zoom,
                             lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
                         )
                     }
                     photoDao.insertOrUpdateAll(photosToSave)
                     albumDao.insertOrUpdate(
                         album.copy(
-                            photoCount = photos.size,
-                            coverUri = photos.firstOrNull()?.uri ?: album.coverUri,
+                            photoCount = scannedPhotos.size,
+                            coverUri = scannedPhotos.firstOrNull()?.uri ?: album.coverUri,
                             lastSyncedAt = System.currentTimeMillis()
                         )
                     )
@@ -164,6 +204,7 @@ class AlbumRepositoryImpl @Inject constructor(
                 }
             }
         }
+        wallpaperCustomizationDao.deleteOrphanedCustomizations()
     }
 
     override fun getPhotosInAlbum(albumId: String): Flow<List<PhotoItem>> {
@@ -175,6 +216,7 @@ class AlbumRepositoryImpl @Inject constructor(
     override suspend fun deleteAlbum(albumId: String) {
         albumDao.deleteAlbum(albumId)
         photoDao.deletePhotosByAlbum(albumId)
+        wallpaperCustomizationDao.deleteOrphanedCustomizations()
     }
 
     override suspend fun importSharedPhotos(uris: List<String>, albumTitle: String?): Result<Album> {
@@ -192,6 +234,7 @@ class AlbumRepositoryImpl @Inject constructor(
             lastSyncedAt = System.currentTimeMillis()
         )
         val photos = uris.mapIndexed { index, uri ->
+            val customization = wallpaperCustomizationDao.getCustomization(uri)
             PhotoItem(
                 id = "${albumId}_${System.currentTimeMillis()}_$index",
                 albumId = albumId,
@@ -199,7 +242,10 @@ class AlbumRepositoryImpl @Inject constructor(
                 width = 1920,
                 height = 1080,
                 dateAdded = System.currentTimeMillis() - (index * 1000L),
-                lastDisplayedAt = 0L
+                lastDisplayedAt = 0L,
+                cropX = customization?.cropX,
+                cropY = customization?.cropY,
+                zoom = customization?.zoom
             )
         }
         albumDao.insertOrUpdate(album.toEntity())
@@ -238,7 +284,8 @@ class AlbumRepositoryImpl @Inject constructor(
         dateAdded = dateAdded,
         lastDisplayedAt = lastDisplayedAt,
         cropX = cropX,
-        cropY = cropY
+        cropY = cropY,
+        zoom = zoom
     )
 
     private fun PhotoItem.toEntity() = PhotoEntity(
@@ -250,6 +297,7 @@ class AlbumRepositoryImpl @Inject constructor(
         dateAdded = dateAdded,
         lastDisplayedAt = lastDisplayedAt,
         cropX = cropX,
-        cropY = cropY
+        cropY = cropY,
+        zoom = zoom
     )
 }
