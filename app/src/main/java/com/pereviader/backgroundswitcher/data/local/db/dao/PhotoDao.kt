@@ -43,10 +43,16 @@ interface PhotoDao {
     @Query("UPDATE photos SET cropX = :cropX, cropY = :cropY WHERE uri = :uri")
     suspend fun updateCropByUri(uri: String, cropX: Float?, cropY: Float?)
 
+    @Query("UPDATE photos SET isEnabled = :isEnabled WHERE id = :id")
+    suspend fun updatePhotoEnabled(id: String, isEnabled: Boolean)
+
+    @Query("UPDATE photos SET isEnabled = :isEnabled WHERE uri = :uri")
+    suspend fun updatePhotoEnabledByUri(uri: String, isEnabled: Boolean)
+
     @Query("""
         SELECT p.* FROM photos p 
         INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 
+        WHERE a.isSelected = 1 AND p.isEnabled = 1
         ORDER BY p.lastDisplayedAt ASC 
         LIMIT 1
     """)
@@ -55,7 +61,7 @@ interface PhotoDao {
     @Query("""
         SELECT p.* FROM photos p 
         INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 
+        WHERE a.isSelected = 1 AND p.isEnabled = 1
         ORDER BY RANDOM() 
         LIMIT 1
     """)
@@ -64,13 +70,13 @@ interface PhotoDao {
     @Query("""
         SELECT p.* FROM photos p 
         INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 
+        WHERE a.isSelected = 1 AND p.isEnabled = 1
         ORDER BY p.dateAdded DESC 
         LIMIT 1
     """)
     suspend fun getLatestPhoto(): PhotoEntity?
 
-    @Query("SELECT COUNT(*) FROM photos p INNER JOIN albums a ON p.albumId = a.id WHERE a.isSelected = 1")
+    @Query("SELECT COUNT(*) FROM photos p INNER JOIN albums a ON p.albumId = a.id WHERE a.isSelected = 1 AND p.isEnabled = 1")
     suspend fun getSelectedPhotosCount(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

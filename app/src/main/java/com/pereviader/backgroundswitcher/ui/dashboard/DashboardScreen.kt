@@ -17,9 +17,16 @@ fun DashboardScreen(
     modifier: Modifier = Modifier
 ) {
     PreviewScreen(
-        settings = settings,
+        albums = emptyList(),
+        selectedAlbumId = null,
+        photos = if (currentPhoto != null) listOf(currentPhoto) else emptyList(),
+        currentIndex = 0,
         currentPhoto = currentPhoto,
-        onTriggerCycleNow = onTriggerCycleNow,
+        onSelectAlbum = {},
+        onSelectPhotoIndex = {},
+        onPreviousPhoto = {},
+        onNextPhoto = {},
+        onTogglePhotoEnabled = { _, _ -> },
         onCustomizationChanged = { photoId, cropX, cropY, _ ->
             onCropChanged(photoId, cropX, cropY)
         },

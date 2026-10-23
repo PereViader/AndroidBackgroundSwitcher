@@ -110,7 +110,10 @@ class MainActivity : ComponentActivity() {
 fun MainAppContent(viewModel: MainViewModel) {
     val albums by viewModel.albums.collectAsState()
     val settings by viewModel.settings.collectAsState()
-    val previewPhoto by viewModel.previewPhoto.collectAsState()
+    val selectedAlbumId by viewModel.selectedPreviewAlbumId.collectAsState()
+    val previewPhotos by viewModel.previewPhotos.collectAsState()
+    val selectedPhotoIndex by viewModel.selectedPreviewPhotoIndex.collectAsState()
+    val currentPhoto by viewModel.currentPreviewPhoto.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -152,9 +155,16 @@ fun MainAppContent(viewModel: MainViewModel) {
     ) { innerPadding ->
         when (selectedTab) {
             0 -> PreviewScreen(
-                settings = settings,
-                currentPhoto = previewPhoto,
-                onTriggerCycleNow = { viewModel.triggerImmediateCycle() },
+                albums = albums,
+                selectedAlbumId = selectedAlbumId,
+                photos = previewPhotos,
+                currentIndex = selectedPhotoIndex,
+                currentPhoto = currentPhoto,
+                onSelectAlbum = { albumId -> viewModel.selectPreviewAlbum(albumId) },
+                onSelectPhotoIndex = { index -> viewModel.selectPreviewPhotoIndex(index) },
+                onPreviousPhoto = { viewModel.previousPreviewPhoto() },
+                onNextPhoto = { viewModel.nextPreviewPhoto() },
+                onTogglePhotoEnabled = { photoId, isEnabled -> viewModel.togglePhotoEnabled(photoId, isEnabled) },
                 onCustomizationChanged = { photoId, cropX, cropY, zoom ->
                     viewModel.updatePhotoCustomization(photoId, cropX, cropY, zoom)
                 },
@@ -171,11 +181,16 @@ fun MainAppContent(viewModel: MainViewModel) {
                 onSyncGooglePhotosAlbum = { id -> viewModel.syncGooglePhotosAlbum(id) },
                 onDeleteAlbum = { id -> viewModel.deleteAlbum(id) },
                 getPhotosForAlbum = { id -> viewModel.getPhotosForAlbum(id) },
+                onOpenAlbumInPreview = { albumId, photoId ->
+                    viewModel.openAlbumInPreview(albumId, photoId)
+                    selectedTab = 0
+                },
                 modifier = Modifier.padding(innerPadding)
             )
             2 -> SettingsScreen(
                 settings = settings,
                 onUpdateSettings = { newSettings -> viewModel.updateSettings(newSettings) },
+                onTriggerCycleNow = { viewModel.triggerImmediateCycle() },
                 modifier = Modifier.padding(innerPadding)
             )
         }

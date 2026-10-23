@@ -78,7 +78,8 @@ class AlbumRepositoryImpl @Inject constructor(
                     cropX = customization?.cropX ?: existing?.cropX,
                     cropY = customization?.cropY ?: existing?.cropY,
                     zoom = customization?.zoom ?: existing?.zoom,
-                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
+                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
+                    isEnabled = customization?.isEnabled ?: existing?.isEnabled ?: true
                 )
             }
             photoDao.insertOrUpdateAll(photosToSave)
@@ -102,7 +103,8 @@ class AlbumRepositoryImpl @Inject constructor(
                         cropX = customization?.cropX ?: existing?.cropX,
                         cropY = customization?.cropY ?: existing?.cropY,
                         zoom = customization?.zoom ?: existing?.zoom,
-                        lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
+                        lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
+                        isEnabled = customization?.isEnabled ?: existing?.isEnabled ?: true
                     )
                 }
                 photoDao.insertOrUpdateAll(photosToSave)
@@ -121,7 +123,8 @@ class AlbumRepositoryImpl @Inject constructor(
                 photo.toEntity().copy(
                     cropX = customization?.cropX,
                     cropY = customization?.cropY,
-                    zoom = customization?.zoom
+                    zoom = customization?.zoom,
+                    isEnabled = customization?.isEnabled ?: true
                 )
             }
             photoDao.insertOrUpdateAll(photosToSave)
@@ -152,7 +155,8 @@ class AlbumRepositoryImpl @Inject constructor(
                     cropX = customization?.cropX ?: existing?.cropX,
                     cropY = customization?.cropY ?: existing?.cropY,
                     zoom = customization?.zoom ?: existing?.zoom,
-                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
+                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
+                    isEnabled = customization?.isEnabled ?: existing?.isEnabled ?: true
                 )
             }
             albumDao.insertOrUpdate(updatedEntity)
@@ -185,7 +189,8 @@ class AlbumRepositoryImpl @Inject constructor(
                             cropX = customization?.cropX ?: existing?.cropX,
                             cropY = customization?.cropY ?: existing?.cropY,
                             zoom = customization?.zoom ?: existing?.zoom,
-                            lastDisplayedAt = existing?.lastDisplayedAt ?: 0L
+                            lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
+                            isEnabled = customization?.isEnabled ?: existing?.isEnabled ?: true
                         )
                     }
                     photoDao.insertOrUpdateAll(photosToSave)
@@ -245,7 +250,8 @@ class AlbumRepositoryImpl @Inject constructor(
                 lastDisplayedAt = 0L,
                 cropX = customization?.cropX,
                 cropY = customization?.cropY,
-                zoom = customization?.zoom
+                zoom = customization?.zoom,
+                isEnabled = customization?.isEnabled ?: true
             )
         }
         albumDao.insertOrUpdate(album.toEntity())
@@ -285,7 +291,8 @@ class AlbumRepositoryImpl @Inject constructor(
         lastDisplayedAt = lastDisplayedAt,
         cropX = cropX,
         cropY = cropY,
-        zoom = zoom
+        zoom = zoom,
+        isEnabled = isEnabled
     )
 
     private fun PhotoItem.toEntity() = PhotoEntity(
@@ -298,6 +305,7 @@ class AlbumRepositoryImpl @Inject constructor(
         lastDisplayedAt = lastDisplayedAt,
         cropX = cropX,
         cropY = cropY,
-        zoom = zoom
+        zoom = zoom,
+        isEnabled = isEnabled
     )
 }

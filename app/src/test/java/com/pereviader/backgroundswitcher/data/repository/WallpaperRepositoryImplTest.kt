@@ -106,6 +106,49 @@ class WallpaperRepositoryImplTest {
     }
 
     @Test
+    fun `togglePhotoEnabled with false saves exclusion in DAO and updates photos table`() = runTest {
+        val photo = PhotoEntity(
+            id = "photo_1",
+            albumId = "album_1",
+            uri = "content://media/external/images/media/42",
+            isEnabled = true
+        )
+        coEvery { photoDao.getPhotoById("photo_1") } returns photo
+        coEvery { wallpaperCustomizationDao.getCustomization("content://media/external/images/media/42") } returns null
+
+        repository.togglePhotoEnabled("photo_1", false)
+
+        coVerify { photoDao.updatePhotoEnabled("photo_1", false) }
+        coVerify {
+            wallpaperCustomizationDao.insertOrUpdate(
+                match {
+                    it.imageUri == "content://media/external/images/media/42" && !it.isEnabled
+                }
+            )
+        }
+    }
+
+    @Test
+    fun `togglePhotoEnabled with true and default crop deletes customization from DAO and enables photo`() = runTest {
+        val photo = PhotoEntity(
+            id = "photo_1",
+            albumId = "album_1",
+            uri = "content://media/external/images/media/42",
+            isEnabled = false
+        )
+        coEvery { photoDao.getPhotoById("photo_1") } returns photo
+        coEvery { wallpaperCustomizationDao.getCustomization("content://media/external/images/media/42") } returns WallpaperCustomizationEntity(
+            imageUri = "content://media/external/images/media/42",
+            isEnabled = false
+        )
+
+        repository.togglePhotoEnabled("photo_1", true)
+
+        coVerify { photoDao.updatePhotoEnabled("photo_1", true) }
+        coVerify { wallpaperCustomizationDao.deleteCustomization("content://media/external/images/media/42") }
+    }
+
+    @Test
     fun `deleteUnreferenceablePhoto deletes photo by ID and removes orphaned customizations`() = runTest {
         repository.deleteUnreferenceablePhoto("photo_1", "content://media/external/images/media/42")
 

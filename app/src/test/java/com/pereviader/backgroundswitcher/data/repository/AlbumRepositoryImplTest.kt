@@ -186,4 +186,53 @@ class AlbumRepositoryImplTest {
         coVerify { photoDao.deletePhotosByIds(listOf("p2")) }
         coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
     }
+
+    @Test
+    fun `syncGooglePhotosAlbum preserves exclusion state from customizations`() = runTest {
+        val albumId = "gp_123"
+        val savedUrl = "https://photos.app.goo.gl/myAlbum"
+        val existingEntity = AlbumEntity(
+            id = albumId,
+            name = "My Album",
+            coverUri = null,
+            photoCount = 1,
+            source = AlbumSource.GOOGLE_PHOTOS_SHARE.name,
+            isSelected = true,
+            lastSyncedAt = 100L,
+            sourceUrl = savedUrl
+        )
+
+        coEvery { albumDao.getAlbumById(albumId) } returns existingEntity
+        coEvery { wallpaperCustomizationDao.getCustomization("https://lh3.googleusercontent.com/1=s2560") } returns WallpaperCustomizationEntity(
+            imageUri = "https://lh3.googleusercontent.com/1=s2560",
+            isEnabled = false
+        )
+
+        val refreshedAlbum = Album(
+            id = albumId,
+            name = "My Album",
+            coverUri = "https://lh3.googleusercontent.com/newCover=s800",
+            photoCount = 1,
+            source = AlbumSource.GOOGLE_PHOTOS_SHARE,
+            isSelected = true,
+            sourceUrl = savedUrl
+        )
+        val newPhotos = listOf(
+            PhotoItem(id = "p1", albumId = albumId, uri = "https://lh3.googleusercontent.com/1=s2560", width = 2560, height = 1440, dateAdded = 1L, lastDisplayedAt = 0L)
+        )
+
+        coEvery { googlePhotosParser.parseAlbumUrl(savedUrl) } returns Result.success(
+            GooglePhotosShareParser.ParsedSharedAlbum(refreshedAlbum, newPhotos)
+        )
+
+        val result = repository.syncGooglePhotosAlbum(albumId)
+
+        assertThat(result.isSuccess).isTrue()
+        coVerify {
+            photoDao.insertOrUpdateAll(match { list ->
+                val p1 = list.first { it.id == "p1" }
+                !p1.isEnabled
+            })
+        }
+    }
 }

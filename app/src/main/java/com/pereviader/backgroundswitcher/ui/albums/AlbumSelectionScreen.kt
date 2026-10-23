@@ -1,5 +1,6 @@
 package com.pereviader.backgroundswitcher.ui.albums
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
@@ -52,6 +54,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,6 +75,7 @@ fun AlbumSelectionScreen(
     onSyncGooglePhotosAlbum: (String) -> Unit,
     onDeleteAlbum: (String) -> Unit,
     getPhotosForAlbum: (String) -> Flow<List<PhotoItem>>,
+    onOpenAlbumInPreview: (albumId: String, photoId: String?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var showImportDialog by remember { mutableStateOf(false) }
@@ -168,6 +173,10 @@ fun AlbumSelectionScreen(
                 onDelete = {
                     selectedAlbumForDetails = null
                     albumToDelete = album
+                },
+                onOpenInPreview = { photoId ->
+                    selectedAlbumForDetails = null
+                    onOpenAlbumInPreview(album.id, photoId)
                 }
             )
         }
@@ -340,7 +349,8 @@ private fun AlbumPhotosDialog(
     photosFlow: Flow<List<PhotoItem>>,
     onDismiss: () -> Unit,
     onSync: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onOpenInPreview: (photoId: String?) -> Unit
 ) {
     val photos by photosFlow.collectAsState(initial = emptyList())
     val isGooglePhotos = album.source == AlbumSource.GOOGLE_PHOTOS_SHARE
@@ -361,17 +371,30 @@ private fun AlbumPhotosDialog(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (isGooglePhotos) {
-                        IconButton(onClick = onSync) {
-                            Icon(Icons.Default.Sync, contentDescription = "Sync from Google Photos")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isGooglePhotos) {
+                            IconButton(onClick = onSync) {
+                                Icon(Icons.Default.Sync, contentDescription = "Sync from Google Photos")
+                            }
                         }
                     }
                 }
-                Text(
-                    text = "${photos.size} photos • ${if (isGooglePhotos) "Google Photos Shared Album" else "Device Album"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${photos.size} photos • ${if (isGooglePhotos) "Google Photos" else "Device Album"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(onClick = { onOpenInPreview(null) }) {
+                        Icon(Icons.Default.Preview, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Preview & Edit", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         },
         text = {
@@ -409,15 +432,46 @@ private fun AlbumPhotosDialog(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(photos, key = { it.id }) { photo ->
-                            AsyncImage(
-                                model = photo.uri,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(8.dp))
-                            )
+                                    .clickable { onOpenInPreview(photo.id) }
+                            ) {
+                                AsyncImage(
+                                    model = photo.uri,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer {
+                                            if (!photo.isEnabled) {
+                                                alpha = 0.45f
+                                            }
+                                        }
+                                )
+                                if (!photo.isEnabled) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.4f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.error
+                                        ) {
+                                            Text(
+                                                text = "OFF",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onError,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

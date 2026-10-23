@@ -14,6 +14,7 @@ import com.pereviader.backgroundswitcher.domain.usecase.GetWallpaperSettingsUseC
 import com.pereviader.backgroundswitcher.domain.usecase.ToggleAlbumSelectionUseCase
 import com.pereviader.backgroundswitcher.domain.usecase.UpdateWallpaperSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -21,7 +22,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -48,12 +52,34 @@ class MainViewModel @Inject constructor(
     val settings: StateFlow<WallpaperSettings> = getWallpaperSettingsUseCase()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WallpaperSettings())
 
-    val previewPhoto: StateFlow<PhotoItem?> = combine(
-        wallpaperRepository.getCurrentPhoto(),
-        albums
-    ) { current, _ ->
-        current ?: wallpaperRepository.getNextCandidatePhoto()
+    private val _selectedPreviewAlbumId = MutableStateFlow<String?>(null)
+    val selectedPreviewAlbumId: StateFlow<String?> = _selectedPreviewAlbumId.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val previewPhotos: StateFlow<List<PhotoItem>> = _selectedPreviewAlbumId.flatMapLatest { albumId ->
+        if (albumId != null) {
+            albumRepository.getPhotosInAlbum(albumId)
+        } else {
+            flowOf(emptyList())
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _selectedPreviewPhotoIndex = MutableStateFlow(0)
+    val selectedPreviewPhotoIndex: StateFlow<Int> = _selectedPreviewPhotoIndex.asStateFlow()
+
+    val currentPreviewPhoto: StateFlow<PhotoItem?> = combine(
+        previewPhotos,
+        _selectedPreviewPhotoIndex
+    ) { photos, index ->
+        if (photos.isNotEmpty()) {
+            val clamped = index.coerceIn(0, photos.size - 1)
+            photos[clamped]
+        } else {
+            null
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val previewPhoto: StateFlow<PhotoItem?> = currentPreviewPhoto
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -63,6 +89,60 @@ class MainViewModel @Inject constructor(
 
     init {
         refreshAlbums()
+        viewModelScope.launch {
+            albums.collectLatest { albumList ->
+                if (albumList.isNotEmpty() && (_selectedPreviewAlbumId.value == null || albumList.none { it.id == _selectedPreviewAlbumId.value })) {
+                    val defaultAlbum = albumList.firstOrNull { it.isSelected } ?: albumList.first()
+                    _selectedPreviewAlbumId.value = defaultAlbum.id
+                }
+            }
+        }
+        viewModelScope.launch {
+            previewPhotos.collectLatest { photos ->
+                if (photos.isNotEmpty() && _selectedPreviewPhotoIndex.value >= photos.size) {
+                    _selectedPreviewPhotoIndex.value = photos.size - 1
+                }
+            }
+        }
+    }
+
+    fun selectPreviewAlbum(albumId: String) {
+        _selectedPreviewAlbumId.value = albumId
+        _selectedPreviewPhotoIndex.value = 0
+    }
+
+    fun selectPreviewPhotoIndex(index: Int) {
+        _selectedPreviewPhotoIndex.value = index
+    }
+
+    fun nextPreviewPhoto() {
+        val count = previewPhotos.value.size
+        if (count > 0) {
+            _selectedPreviewPhotoIndex.value = (_selectedPreviewPhotoIndex.value + 1) % count
+        }
+    }
+
+    fun previousPreviewPhoto() {
+        val count = previewPhotos.value.size
+        if (count > 0) {
+            _selectedPreviewPhotoIndex.value = (_selectedPreviewPhotoIndex.value - 1 + count) % count
+        }
+    }
+
+    fun togglePhotoEnabled(photoId: String, isEnabled: Boolean) {
+        viewModelScope.launch {
+            wallpaperRepository.togglePhotoEnabled(photoId, isEnabled)
+        }
+    }
+
+    fun openAlbumInPreview(albumId: String, photoId: String? = null) {
+        _selectedPreviewAlbumId.value = albumId
+        if (photoId != null) {
+            val idx = previewPhotos.value.indexOfFirst { it.id == photoId }
+            _selectedPreviewPhotoIndex.value = if (idx >= 0) idx else 0
+        } else {
+            _selectedPreviewPhotoIndex.value = 0
+        }
     }
 
     fun refreshAlbums() {

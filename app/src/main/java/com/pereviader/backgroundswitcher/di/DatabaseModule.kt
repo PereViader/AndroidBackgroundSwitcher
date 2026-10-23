@@ -77,6 +77,13 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE photos ADD COLUMN isEnabled INTEGER NOT NULL DEFAULT 1")
+            database.execSQL("ALTER TABLE wallpaper_customizations ADD COLUMN isEnabled INTEGER NOT NULL DEFAULT 1")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -84,7 +91,7 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "background_switcher.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .fallbackToDestructiveMigration()
             .build()
     }

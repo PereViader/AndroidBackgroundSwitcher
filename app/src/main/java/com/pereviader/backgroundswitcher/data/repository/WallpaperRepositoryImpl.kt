@@ -77,7 +77,8 @@ class WallpaperRepositoryImpl @Inject constructor(
                 lastDisplayedAt = it.lastDisplayedAt,
                 cropX = it.cropX,
                 cropY = it.cropY,
-                zoom = it.zoom
+                zoom = it.zoom,
+                isEnabled = it.isEnabled
             )
         }
     }
@@ -156,13 +157,40 @@ class WallpaperRepositoryImpl @Inject constructor(
                 lastDisplayedAt = it.lastDisplayedAt,
                 cropX = it.cropX,
                 cropY = it.cropY,
-                zoom = it.zoom
+                zoom = it.zoom,
+                isEnabled = it.isEnabled
             )
         }
     }
 
     override suspend fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?) {
         updatePhotoCustomization(photoId, cropX, cropY, null)
+    }
+
+    override suspend fun togglePhotoEnabled(photoId: String, isEnabled: Boolean) = withContext(Dispatchers.IO) {
+        val photo = photoDao.getPhotoById(photoId) ?: return@withContext
+        photoDao.updatePhotoEnabled(photoId, isEnabled)
+        val uri = photo.uri
+        val customization = wallpaperCustomizationDao.getCustomization(uri)
+        val cropX = customization?.cropX ?: photo.cropX
+        val cropY = customization?.cropY ?: photo.cropY
+        val zoom = customization?.zoom ?: photo.zoom
+        val isDefault = cropX == null && cropY == null && (zoom == null || zoom <= 1.001f) && isEnabled
+
+        if (isDefault) {
+            wallpaperCustomizationDao.deleteCustomization(uri)
+        } else {
+            wallpaperCustomizationDao.insertOrUpdate(
+                WallpaperCustomizationEntity(
+                    imageUri = uri,
+                    cropX = cropX,
+                    cropY = cropY,
+                    zoom = zoom,
+                    isEnabled = isEnabled,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
     }
 
     override suspend fun updatePhotoCustomization(
@@ -173,7 +201,8 @@ class WallpaperRepositoryImpl @Inject constructor(
     ) = withContext(Dispatchers.IO) {
         val photo = photoDao.getPhotoById(photoId)
         val uri = photo?.uri
-        val isDefault = cropX == null && cropY == null && (zoom == null || zoom <= 1.001f)
+        val currentEnabled = photo?.isEnabled ?: true
+        val isDefault = cropX == null && cropY == null && (zoom == null || zoom <= 1.001f) && currentEnabled
 
         if (uri != null) {
             if (isDefault) {
@@ -186,6 +215,7 @@ class WallpaperRepositoryImpl @Inject constructor(
                         cropX = cropX,
                         cropY = cropY,
                         zoom = zoom,
+                        isEnabled = currentEnabled,
                         updatedAt = System.currentTimeMillis()
                     )
                 )
@@ -235,7 +265,8 @@ class WallpaperRepositoryImpl @Inject constructor(
             lastDisplayedAt = entity.lastDisplayedAt,
             cropX = entity.cropX,
             cropY = entity.cropY,
-            zoom = entity.zoom
+            zoom = entity.zoom,
+            isEnabled = entity.isEnabled
         )
 
         val dimensions = ScreenMetricsHelper.getScreenDimensions(context)

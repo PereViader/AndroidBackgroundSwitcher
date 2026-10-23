@@ -13,6 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -33,6 +39,7 @@ import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 fun SettingsScreen(
     settings: WallpaperSettings,
     onUpdateSettings: (WallpaperSettings) -> Unit,
+    onTriggerCycleNow: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -43,6 +50,49 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
+
+        // Manual Wallpaper Rotation Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Manual Wallpaper Rotation",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        "Switch wallpaper immediately to the next enabled photo",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                FilledTonalButton(
+                    onClick = onTriggerCycleNow,
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Autorenew,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Cycle Now")
+                }
+            }
+        }
 
         // Enable / Disable Master Toggle
         Card(

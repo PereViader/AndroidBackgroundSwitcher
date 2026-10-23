@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.os.Build
 
 object CenterCropEngine {
 
@@ -32,7 +33,14 @@ object CenterCropEngine {
             zoom = zoom
         )
 
-        val output = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val output = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && source.colorSpace != null) {
+            Bitmap.createBitmap(null, targetWidth, targetHeight, Bitmap.Config.ARGB_8888, false, source.colorSpace!!)
+        } else {
+            Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888).apply {
+                setHasAlpha(false)
+            }
+        }
+
         val canvas = Canvas(output)
 
         val matrix = Matrix().apply {
