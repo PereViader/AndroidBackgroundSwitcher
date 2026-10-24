@@ -1,7 +1,9 @@
 package com.pereviader.backgroundswitcher.core.wallpaper
 
 import android.app.WallpaperManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Build
@@ -69,6 +71,25 @@ class WallpaperManagerHelper @Inject constructor(
             wallpaperManager.isSetWallpaperAllowed
         } else {
             true
+        }
+    }
+
+    fun isLiveWallpaperActive(): Boolean {
+        return try {
+            val info = wallpaperManager.wallpaperInfo
+            info != null && info.packageName == context.packageName
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun getLiveWallpaperIntent(): Intent {
+        return Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+            putExtra(
+                WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                ComponentName(context, LiveWallpaperService::class.java)
+            )
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
     }
 }

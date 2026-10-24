@@ -97,6 +97,9 @@ fun PreviewScreen(
     onNextPhoto: () -> Unit,
     onTogglePhotoEnabled: (photoId: String, isEnabled: Boolean) -> Unit,
     onCustomizationChanged: (photoId: String, cropX: Float?, cropY: Float?, zoom: Float?) -> Unit,
+    onSetAsWallpaper: (PhotoItem) -> Unit = {},
+    isLiveWallpaperActive: Boolean = false,
+    onActivateLiveWallpaper: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -115,6 +118,44 @@ fun PreviewScreen(
             .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        if (!isLiveWallpaperActive) {
+            Surface(
+                onClick = onActivateLiveWallpaper,
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Wallpaper,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Enable Live Wallpaper for double-tap gestures & 10s rotation",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Enable",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+
         // Main Preview Card area: Maximized to take full height, zero clutter above
         BoxWithConstraints(
             modifier = Modifier
@@ -189,6 +230,35 @@ fun PreviewScreen(
             }
         }
 
+        // Quick Action Bar: Photo Counter & Set as Wallpaper Button
+        if (currentPhoto != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${currentIndex + 1} of ${photos.size}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FilledTonalButton(
+                    onClick = { onSetAsWallpaper(currentPhoto) },
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Wallpaper,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Set as Wallpaper", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+
         // Bottom-Docked Controls: Counter + Centered Filmstrip
         BottomBrowsingControls(
             photos = photos,
@@ -209,6 +279,25 @@ fun PreviewScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FilledTonalButton(
+                        onClick = {
+                            onSetAsWallpaper(currentPhoto)
+                            showActionModal = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Wallpaper,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Set as Wallpaper")
+                    }
+
                     FilledTonalButton(
                         onClick = {
                             onTogglePhotoEnabled(currentPhoto.id, !currentPhoto.isEnabled)

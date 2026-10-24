@@ -18,5 +18,7 @@ interface WallpaperRepository {
     suspend fun deleteUnreferenceablePhoto(photoId: String, uri: String)
     suspend fun cleanupUnreferenceableCustomizations()
     suspend fun reapplyCurrentWallpaper(): Result<Unit>
+    suspend fun setPhotoAsWallpaper(photo: PhotoItem): Result<Unit>
+    fun isLiveWallpaperActive(): Boolean
     fun getCurrentPhoto(): Flow<PhotoItem?>
 }

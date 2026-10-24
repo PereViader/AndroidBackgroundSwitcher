@@ -86,6 +86,7 @@ class PreferencesManagerTest {
 
         val settings = preferencesManager.settingsFlow.first()
         assertThat(settings.intervalMinutes).isEqualTo(45L)
+        assertThat(settings.intervalSeconds).isEqualTo(45L * 60L)
         assertThat(settings.targetScreen).isEqualTo(TargetScreen.LOCK)
         assertThat(settings.rotationOrder).isEqualTo(RotationOrder.CHRONOLOGICAL)
         assertThat(settings.onlyOnWifi).isFalse()
@@ -95,5 +96,15 @@ class PreferencesManagerTest {
         assertThat(settings.lastRotatedAt).isEqualTo(123456789L)
         assertThat(settings.currentWallpaperUri).isEqualTo("content://test/uri")
         assertThat(settings.currentPhotoId).isEqualTo("photo_99")
+    }
+
+    @Test
+    fun `updateIntervalSeconds sets sub-minute interval for fast testing`() = runTest {
+        val preferencesManager = createPreferencesManager()
+        preferencesManager.updateIntervalSeconds(10L)
+
+        val settings = preferencesManager.settingsFlow.first()
+        assertThat(settings.intervalSeconds).isEqualTo(10L)
+        assertThat(settings.intervalMillis).isEqualTo(10000L)
     }
 }

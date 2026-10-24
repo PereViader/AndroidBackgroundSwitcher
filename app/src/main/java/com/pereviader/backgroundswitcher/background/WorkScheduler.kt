@@ -24,20 +24,13 @@ class WorkScheduler @Inject constructor(
         // WorkManager minimum periodic interval is 15 minutes
         val effectiveMinutes = max(15L, intervalMinutes)
 
-        val networkType = if (onlyOnWifi) NetworkType.UNMETERED else NetworkType.CONNECTED
-
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(networkType)
-            .setRequiresBatteryNotLow(true)
-            .build()
-
+        // Wallpaper cycling should run reliably for local/cached media without network gating
         val periodicWork = PeriodicWorkRequestBuilder<WallpaperCycleWorker>(
             effectiveMinutes,
             TimeUnit.MINUTES,
             5,
             TimeUnit.MINUTES // Flex interval
         )
-            .setConstraints(constraints)
             .build()
 
         workManager.enqueueUniquePeriodicWork(

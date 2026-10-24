@@ -2,6 +2,7 @@ package com.pereviader.backgroundswitcher.core.crop
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.os.Build
@@ -42,6 +43,7 @@ object CenterCropEngine {
         }
 
         val canvas = Canvas(output)
+        canvas.drawColor(Color.BLACK)
 
         val matrix = Matrix().apply {
             postScale(calc.scale, calc.scale)

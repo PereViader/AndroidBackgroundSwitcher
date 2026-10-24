@@ -1,5 +1,8 @@
 package com.pereviader.backgroundswitcher.ui.settings
 
+import android.app.WallpaperManager
+import android.content.ComponentName
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -17,7 +20,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -29,19 +35,26 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pereviader.backgroundswitcher.core.model.RotationOrder
 import com.pereviader.backgroundswitcher.core.model.TargetScreen
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
+import com.pereviader.backgroundswitcher.core.wallpaper.LiveWallpaperService
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     settings: WallpaperSettings,
+    isLiveWallpaperActive: Boolean = false,
     onUpdateSettings: (WallpaperSettings) -> Unit,
     onTriggerCycleNow: () -> Unit = {},
+    onActivateLiveWallpaper: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -50,6 +63,88 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
+
+        // Live Wallpaper Mode Status Banner
+        if (isLiveWallpaperActive) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Wallpaper,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Live Wallpaper Mode: Active",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "Double-tap to cycle, screen unlock cycling & 10s rotation are fully enabled.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            }
+        } else {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Wallpaper,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Static Wallpaper Mode",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Double-tap to cycle, screen unlock rotation, and 10-second timers require Live Wallpaper mode.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    FilledTonalButton(
+                        onClick = onActivateLiveWallpaper,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Activate Live Wallpaper Mode")
+                    }
+                }
+            }
+        }
 
         // Manual Wallpaper Rotation Card
         Card(
@@ -178,6 +273,58 @@ fun SettingsScreen(
             }
         }
 
+        // Activate Live Wallpaper Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Wallpaper,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Live Wallpaper Activation", style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Set Background Switcher as your system Live Wallpaper to enable double-tap gestures and smooth unlock cycling.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                FilledTonalButton(
+                    onClick = {
+                        try {
+                            val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                                putExtra(
+                                    WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                                    ComponentName(context, LiveWallpaperService::class.java)
+                                )
+                            }
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            try {
+                                context.startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
+                            } catch (_: Exception) {
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Set as System Live Wallpaper")
+                }
+            }
+        }
+
         // Interval Setting
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -194,24 +341,42 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 val intervals = listOf(
-                    15L to "15 min",
-                    30L to "30 min",
-                    60L to "1 hour",
-                    360L to "6 hours",
-                    1440L to "24 hours"
+                    10L to "10 sec",
+                    900L to "15 min",
+                    1800L to "30 min",
+                    3600L to "1 hour",
+                    21600L to "6 hours",
+                    86400L to "24 hours"
                 )
 
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    intervals.forEach { (minutes, label) ->
+                    intervals.forEach { (seconds, label) ->
                         FilterChip(
-                            selected = settings.intervalMinutes == minutes,
-                            onClick = { onUpdateSettings(settings.copy(intervalMinutes = minutes)) },
+                            selected = settings.intervalSeconds == seconds,
+                            onClick = {
+                                onUpdateSettings(
+                                    settings.copy(
+                                        intervalSeconds = seconds,
+                                        intervalMinutes = kotlin.math.max(1L, seconds / 60L)
+                                    )
+                                )
+                            },
                             label = { Text(label) }
                         )
                     }
+                }
+
+                if (settings.intervalSeconds == 10L) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "⚡ 10-second auto-rotation active (requires Live Wallpaper mode)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }

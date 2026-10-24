@@ -51,7 +51,7 @@ class WallpaperRepositoryImpl @Inject constructor(
     override fun getSettings(): Flow<WallpaperSettings> = preferencesManager.settingsFlow
 
     override suspend fun updateSettings(settings: WallpaperSettings) {
-        preferencesManager.updateInterval(settings.intervalMinutes)
+        preferencesManager.updateIntervalSeconds(settings.intervalSeconds)
         preferencesManager.updateTargetScreen(settings.targetScreen)
         preferencesManager.updateRotationOrder(settings.rotationOrder)
         preferencesManager.updateOnlyOnWifi(settings.onlyOnWifi)
@@ -60,11 +60,21 @@ class WallpaperRepositoryImpl @Inject constructor(
         preferencesManager.updateDoubleTapToCycle(settings.doubleTapToCycle)
     }
 
+    override fun isLiveWallpaperActive(): Boolean = wallpaperManagerHelper.isLiveWallpaperActive()
+
     override suspend fun getNextCandidatePhoto(): PhotoItem? = withContext(Dispatchers.IO) {
         val settings = preferencesManager.settingsFlow.first()
         val entity = when (settings.rotationOrder) {
             RotationOrder.RANDOM -> photoDao.getRandomPhoto()
-            RotationOrder.CHRONOLOGICAL -> photoDao.getLatestPhoto()
+            RotationOrder.CHRONOLOGICAL -> {
+                val currentPhoto = settings.currentPhotoId?.let { photoDao.getPhotoById(it) }
+                    ?: settings.currentWallpaperUri?.let { photoDao.getPhotoByUri(it) }
+                if (currentPhoto != null) {
+                    photoDao.getNextChronologicalPhoto(currentPhoto.dateAdded) ?: photoDao.getOldestPhoto()
+                } else {
+                    photoDao.getOldestPhoto() ?: photoDao.getLatestPhoto()
+                }
+            }
             RotationOrder.LEAST_RECENTLY_USED -> photoDao.getLeastRecentlyUsedPhoto()
         }
 
@@ -129,6 +139,9 @@ class WallpaperRepositoryImpl @Inject constructor(
     }
 
     override suspend fun applyWallpaper(bitmap: Bitmap): Result<Unit> {
+        if (wallpaperManagerHelper.isLiveWallpaperActive()) {
+            return Result.success(Unit)
+        }
         val settings = preferencesManager.settingsFlow.first()
         return wallpaperManagerHelper.setWallpaper(bitmap, settings.targetScreen)
     }
@@ -243,6 +256,15 @@ class WallpaperRepositoryImpl @Inject constructor(
     }
 
     override suspend fun reapplyCurrentWallpaper(): Result<Unit> = withContext(Dispatchers.IO) {
+        if (wallpaperManagerHelper.isLiveWallpaperActive()) {
+            val settings = preferencesManager.settingsFlow.first()
+            val photoId = settings.currentPhotoId
+            if (photoId != null) {
+                markPhotoDisplayed(photoId)
+            }
+            return@withContext Result.success(Unit)
+        }
+
         val settings = preferencesManager.settingsFlow.first()
         val entity = (settings.currentPhotoId?.let { photoDao.getPhotoById(it) }
             ?: settings.currentWallpaperUri?.let { photoDao.getPhotoByUri(it) })
@@ -267,8 +289,42 @@ class WallpaperRepositoryImpl @Inject constructor(
             ?: return@withContext Result.failure(IllegalStateException("Failed to render bitmap for wallpaper"))
 
         val result = applyWallpaper(bitmap)
-        bitmap.recycle()
         result
+    }
+
+    override suspend fun setPhotoAsWallpaper(photo: PhotoItem): Result<Unit> = withContext(Dispatchers.IO) {
+        val freshest = photoDao.getPhotoById(photo.id)?.let {
+            PhotoItem(
+                id = it.id,
+                albumId = it.albumId,
+                uri = it.uri,
+                width = it.width,
+                height = it.height,
+                dateAdded = it.dateAdded,
+                lastDisplayedAt = it.lastDisplayedAt,
+                cropX = it.cropX,
+                cropY = it.cropY,
+                zoom = it.zoom,
+                isEnabled = it.isEnabled
+            )
+        } ?: photo
+
+        val isLiveActive = wallpaperManagerHelper.isLiveWallpaperActive()
+        val applyResult = if (isLiveActive) {
+            // Live wallpaper is active: updating markPhotoDisplayed will emit to LiveWallpaperService
+            // without calling setBitmap (which would cancel and unbind the live wallpaper).
+            Result.success(Unit)
+        } else {
+            val dimensions = ScreenMetricsHelper.getScreenDimensions(context)
+            val bitmap = loadAndCropBitmap(freshest, dimensions.width, dimensions.height)
+                ?: return@withContext Result.failure(IllegalStateException("Failed to load and crop photo: ${freshest.uri}"))
+            applyWallpaper(bitmap)
+        }
+
+        if (applyResult.isSuccess) {
+            markPhotoDisplayed(freshest.id)
+        }
+        applyResult
     }
 
     private fun isPhotoReferenceable(uriString: String): Boolean {

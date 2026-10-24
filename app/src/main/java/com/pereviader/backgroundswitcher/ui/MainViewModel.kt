@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -75,11 +76,25 @@ class MainViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    private val _isLiveWallpaperActive = MutableStateFlow(false)
+    val isLiveWallpaperActive: StateFlow<Boolean> = _isLiveWallpaperActive.asStateFlow()
+
     private val _eventFlow = MutableSharedFlow<UiEvent>()
     val eventFlow: SharedFlow<UiEvent> = _eventFlow.asSharedFlow()
 
     init {
         refreshAlbums()
+        checkLiveWallpaperStatus()
+        viewModelScope.launch {
+            val currentSettings = getWallpaperSettingsUseCase().first()
+            if (currentSettings.isEnabled) {
+                workScheduler.scheduleWallpaperCycling(
+                    currentSettings.intervalMinutes,
+                    currentSettings.onlyOnWifi
+                )
+                workScheduler.schedulePeriodicSync(currentSettings.onlyOnWifi)
+            }
+        }
         viewModelScope.launch {
             previewPhotos.collectLatest { photos ->
                 if (photos.isNotEmpty() && _selectedPreviewPhotoIndex.value >= photos.size) {
@@ -110,6 +125,27 @@ class MainViewModel @Inject constructor(
     fun togglePhotoEnabled(photoId: String, isEnabled: Boolean) {
         viewModelScope.launch {
             wallpaperRepository.togglePhotoEnabled(photoId, isEnabled)
+        }
+    }
+
+    fun checkLiveWallpaperStatus() {
+        _isLiveWallpaperActive.value = wallpaperRepository.isLiveWallpaperActive()
+    }
+
+    fun setPhotoAsWallpaper(photo: PhotoItem) {
+        viewModelScope.launch {
+            val isLive = wallpaperRepository.isLiveWallpaperActive()
+            val result = wallpaperRepository.setPhotoAsWallpaper(photo)
+            if (result.isSuccess) {
+                if (isLive) {
+                    _eventFlow.emit(UiEvent.ShowSnackbar("Wallpaper updated to selected photo!"))
+                } else {
+                    _eventFlow.emit(UiEvent.ShowSnackbar("Wallpaper set as static image. Activate Live Wallpaper for double-tap gestures & 10s rotation!"))
+                }
+            } else {
+                val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
+                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to update wallpaper: $errorMsg"))
+            }
         }
     }
 

@@ -84,6 +84,24 @@ interface PhotoDao {
     """)
     suspend fun getLatestPhoto(): PhotoEntity?
 
+    @Query("""
+        SELECT p.* FROM photos p 
+        INNER JOIN albums a ON p.albumId = a.id 
+        WHERE a.isSelected = 1 AND p.isEnabled = 1 AND p.dateAdded > :currentDateAdded
+        ORDER BY p.dateAdded ASC 
+        LIMIT 1
+    """)
+    suspend fun getNextChronologicalPhoto(currentDateAdded: Long): PhotoEntity?
+
+    @Query("""
+        SELECT p.* FROM photos p 
+        INNER JOIN albums a ON p.albumId = a.id 
+        WHERE a.isSelected = 1 AND p.isEnabled = 1
+        ORDER BY p.dateAdded ASC 
+        LIMIT 1
+    """)
+    suspend fun getOldestPhoto(): PhotoEntity?
+
     @Query("SELECT COUNT(*) FROM photos p INNER JOIN albums a ON p.albumId = a.id WHERE a.isSelected = 1 AND p.isEnabled = 1")
     suspend fun getSelectedPhotosCount(): Int
 

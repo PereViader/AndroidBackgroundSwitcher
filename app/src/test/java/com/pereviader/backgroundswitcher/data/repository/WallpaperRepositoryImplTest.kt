@@ -2,6 +2,7 @@ package com.pereviader.backgroundswitcher.data.repository
 
 import android.content.Context
 import coil.ImageLoader
+import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import com.pereviader.backgroundswitcher.core.model.RotationOrder
 import com.pereviader.backgroundswitcher.core.model.TargetScreen
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
@@ -202,12 +203,69 @@ class WallpaperRepositoryImplTest {
 
         repository.updateSettings(settings)
 
-        coVerify { preferencesManager.updateInterval(30L) }
+        coVerify { preferencesManager.updateIntervalSeconds(settings.intervalSeconds) }
         coVerify { preferencesManager.updateTargetScreen(TargetScreen.HOME) }
         coVerify { preferencesManager.updateRotationOrder(RotationOrder.RANDOM) }
         coVerify { preferencesManager.updateOnlyOnWifi(false) }
         coVerify { preferencesManager.updateIsEnabled(true) }
         coVerify { preferencesManager.updateCycleOnUnlock(true) }
         coVerify { preferencesManager.updateDoubleTapToCycle(false) }
+    }
+
+    @Test
+    fun `getNextCandidatePhoto with chronological order picks next chronological photo after current`() = runTest {
+        val currentPhoto = PhotoEntity(
+            id = "photo_current",
+            albumId = "album_1",
+            uri = "content://current",
+            dateAdded = 1000L
+        )
+        val nextPhoto = PhotoEntity(
+            id = "photo_next",
+            albumId = "album_1",
+            uri = "content://next",
+            dateAdded = 2000L
+        )
+        val settings = WallpaperSettings(
+            rotationOrder = RotationOrder.CHRONOLOGICAL,
+            currentPhotoId = "photo_current"
+        )
+        coEvery { preferencesManager.settingsFlow } returns flowOf(settings)
+        coEvery { photoDao.getPhotoById("photo_current") } returns currentPhoto
+        coEvery { photoDao.getNextChronologicalPhoto(1000L) } returns nextPhoto
+
+        val result = repository.getNextCandidatePhoto()
+
+        assert(result?.id == "photo_next")
+        coVerify { photoDao.getNextChronologicalPhoto(1000L) }
+    }
+
+    @Test
+    fun `getNextCandidatePhoto with chronological order wraps to oldest photo when at the end`() = runTest {
+        val currentPhoto = PhotoEntity(
+            id = "photo_latest",
+            albumId = "album_1",
+            uri = "content://latest",
+            dateAdded = 5000L
+        )
+        val oldestPhoto = PhotoEntity(
+            id = "photo_oldest",
+            albumId = "album_1",
+            uri = "content://oldest",
+            dateAdded = 500L
+        )
+        val settings = WallpaperSettings(
+            rotationOrder = RotationOrder.CHRONOLOGICAL,
+            currentPhotoId = "photo_latest"
+        )
+        coEvery { preferencesManager.settingsFlow } returns flowOf(settings)
+        coEvery { photoDao.getPhotoById("photo_latest") } returns currentPhoto
+        coEvery { photoDao.getNextChronologicalPhoto(5000L) } returns null
+        coEvery { photoDao.getOldestPhoto() } returns oldestPhoto
+
+        val result = repository.getNextCandidatePhoto()
+
+        assert(result?.id == "photo_oldest")
+        coVerify { photoDao.getOldestPhoto() }
     }
 }

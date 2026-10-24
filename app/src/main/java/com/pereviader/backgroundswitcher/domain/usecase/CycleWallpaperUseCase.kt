@@ -12,6 +12,11 @@ class CycleWallpaperUseCase @Inject constructor(
     private val wallpaperRepository: WallpaperRepository
 ) {
     suspend operator fun invoke(): Result<Unit> {
+        if (wallpaperRepository.isLiveWallpaperActive()) {
+            // Live wallpaper manages its own cycle without destroying live wallpaper window
+            return Result.success(Unit)
+        }
+
         val dimensions = ScreenMetricsHelper.getScreenDimensions(context)
         val photo = wallpaperRepository.getNextCandidatePhoto()
             ?: return Result.failure(IllegalStateException("No photos found in selected albums"))
@@ -26,7 +31,6 @@ class CycleWallpaperUseCase @Inject constructor(
         if (applyResult.isSuccess) {
             wallpaperRepository.markPhotoDisplayed(photo.id)
         }
-        bitmap.recycle()
         return applyResult
     }
 

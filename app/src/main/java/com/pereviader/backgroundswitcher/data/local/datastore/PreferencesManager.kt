@@ -28,6 +28,7 @@ class PreferencesManager internal constructor(
 
     private object Keys {
         val INTERVAL_MINUTES = longPreferencesKey("interval_minutes")
+        val INTERVAL_SECONDS = longPreferencesKey("interval_seconds")
         val TARGET_SCREEN = stringPreferencesKey("target_screen")
         val ROTATION_ORDER = stringPreferencesKey("rotation_order")
         val ONLY_ON_WIFI = booleanPreferencesKey("only_on_wifi")
@@ -40,8 +41,11 @@ class PreferencesManager internal constructor(
     }
 
     val settingsFlow: Flow<WallpaperSettings> = dataStore.data.map { preferences ->
+        val seconds = preferences[Keys.INTERVAL_SECONDS] ?: ((preferences[Keys.INTERVAL_MINUTES] ?: 60L) * 60L)
+        val minutes = preferences[Keys.INTERVAL_MINUTES] ?: kotlin.math.max(1L, seconds / 60L)
         WallpaperSettings(
-            intervalMinutes = preferences[Keys.INTERVAL_MINUTES] ?: 60L,
+            intervalMinutes = minutes,
+            intervalSeconds = seconds,
             targetScreen = preferences[Keys.TARGET_SCREEN]?.let {
                 runCatching { TargetScreen.valueOf(it) }.getOrDefault(TargetScreen.BOTH)
             } ?: TargetScreen.BOTH,
@@ -59,7 +63,17 @@ class PreferencesManager internal constructor(
     }
 
     suspend fun updateInterval(minutes: Long) {
-        dataStore.edit { it[Keys.INTERVAL_MINUTES] = minutes }
+        dataStore.edit {
+            it[Keys.INTERVAL_MINUTES] = minutes
+            it[Keys.INTERVAL_SECONDS] = minutes * 60L
+        }
+    }
+
+    suspend fun updateIntervalSeconds(seconds: Long) {
+        dataStore.edit {
+            it[Keys.INTERVAL_SECONDS] = seconds
+            it[Keys.INTERVAL_MINUTES] = kotlin.math.max(1L, seconds / 60L)
+        }
     }
 
     suspend fun updateTargetScreen(target: TargetScreen) {

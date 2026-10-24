@@ -92,6 +92,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- Screen Unlock Receiver for static wallpaper rotation on unlock -->
+        <receiver
+            android:name=".background.UserPresentReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

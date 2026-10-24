@@ -1,6 +1,9 @@
 package com.pereviader.backgroundswitcher.ui
 
 import android.Manifest
+import android.app.WallpaperManager
+import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -29,7 +32,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.pereviader.backgroundswitcher.core.wallpaper.LiveWallpaperService
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreContentObserver
 import com.pereviader.backgroundswitcher.ui.albums.AlbumSelectionScreen
 import com.pereviader.backgroundswitcher.ui.preview.PreviewScreen
@@ -73,6 +78,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        viewModel.checkLiveWallpaperStatus()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         mediaStoreObserver.unregister()
@@ -108,12 +118,31 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainAppContent(viewModel: MainViewModel) {
+    val context = LocalContext.current
     val albums by viewModel.albums.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val previewPhotos by viewModel.previewPhotos.collectAsState()
     val selectedPhotoIndex by viewModel.selectedPreviewPhotoIndex.collectAsState()
     val currentPhoto by viewModel.currentPreviewPhoto.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val isLiveWallpaperActive by viewModel.isLiveWallpaperActive.collectAsState()
+
+    fun openLiveWallpaperChooser() {
+        try {
+            val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                putExtra(
+                    WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                    ComponentName(context, LiveWallpaperService::class.java)
+                )
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                context.startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -157,6 +186,7 @@ fun MainAppContent(viewModel: MainViewModel) {
                 photos = previewPhotos,
                 currentIndex = selectedPhotoIndex,
                 currentPhoto = currentPhoto,
+                isLiveWallpaperActive = isLiveWallpaperActive,
                 onSelectPhotoIndex = { index -> viewModel.selectPreviewPhotoIndex(index) },
                 onPreviousPhoto = { viewModel.previousPreviewPhoto() },
                 onNextPhoto = { viewModel.nextPreviewPhoto() },
@@ -164,6 +194,8 @@ fun MainAppContent(viewModel: MainViewModel) {
                 onCustomizationChanged = { photoId, cropX, cropY, zoom ->
                     viewModel.updatePhotoCustomization(photoId, cropX, cropY, zoom)
                 },
+                onSetAsWallpaper = { photo -> viewModel.setPhotoAsWallpaper(photo) },
+                onActivateLiveWallpaper = ::openLiveWallpaperChooser,
                 modifier = Modifier.padding(innerPadding)
             )
             1 -> AlbumSelectionScreen(
@@ -182,8 +214,10 @@ fun MainAppContent(viewModel: MainViewModel) {
             )
             2 -> SettingsScreen(
                 settings = settings,
+                isLiveWallpaperActive = isLiveWallpaperActive,
                 onUpdateSettings = { newSettings -> viewModel.updateSettings(newSettings) },
                 onTriggerCycleNow = { viewModel.triggerImmediateCycle() },
+                onActivateLiveWallpaper = ::openLiveWallpaperChooser,
                 modifier = Modifier.padding(innerPadding)
             )
         }
