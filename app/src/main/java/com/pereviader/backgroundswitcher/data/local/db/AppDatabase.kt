@@ -11,7 +11,7 @@ import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperCustomiza
 
 @Database(
     entities = [AlbumEntity::class, PhotoEntity::class, WallpaperCustomizationEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

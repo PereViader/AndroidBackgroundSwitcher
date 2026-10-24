@@ -37,7 +37,7 @@ import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -98,7 +98,8 @@ fun PreviewScreen(
     onSelectPhotoIndex: (Int) -> Unit,
     onPreviousPhoto: () -> Unit,
     onNextPhoto: () -> Unit,
-    onTogglePhotoEnabled: (photoId: String, isEnabled: Boolean) -> Unit,
+    onTogglePhotoEnabled: (photoId: String, isEnabled: Boolean) -> Unit = { _, _ -> },
+    onRemovePhoto: (photoId: String) -> Unit = { photoId -> onTogglePhotoEnabled(photoId, false) },
     onCustomizationChanged: (photoId: String, cropX: Float?, cropY: Float?, zoom: Float?) -> Unit,
     onSetAsWallpaper: (PhotoItem) -> Unit = {},
     isLiveWallpaperActive: Boolean = false,
@@ -331,29 +332,22 @@ fun PreviewScreen(
 
                     FilledTonalButton(
                         onClick = {
-                            onTogglePhotoEnabled(currentPhoto.id, !currentPhoto.isEnabled)
+                            onRemovePhoto(currentPhoto.id)
                             showActionModal = false
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = if (currentPhoto.isEnabled) {
-                            ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        } else {
-                            ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        )
                     ) {
                         Icon(
-                            imageVector = if (currentPhoto.isEnabled) Icons.Default.VisibilityOff else Icons.Default.CheckCircle,
+                            imageVector = Icons.Default.Delete,
                             contentDescription = null
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (currentPhoto.isEnabled) "Exclude from Rotation" else "Include in Rotation"
+                            text = "Remove from Backgrounds"
                         )
                     }
                 }
@@ -436,13 +430,7 @@ private fun BottomBrowsingControls(
                         model = photo.uri,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                if (!photo.isEnabled) {
-                                    alpha = 0.45f
-                                }
-                            }
+                        modifier = Modifier.fillMaxSize()
                     )
 
                     val isCurrentWallpaper = photo.id == activeWallpaperPhotoId
@@ -461,27 +449,6 @@ private fun BottomBrowsingControls(
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(9.dp)
                             )
-                        }
-                    }
-
-                    if (!photo.isEnabled) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.error
-                            ) {
-                                Text(
-                                    text = "OFF",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                    color = MaterialTheme.colorScheme.onError,
-                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                                )
-                            }
                         }
                     }
                 }
@@ -742,40 +709,8 @@ private fun PhotoPreviewCanvas(
                     val paint = Paint().apply {
                         isFilterBitmap = true
                         isAntiAlias = true
-                        if (!photo.isEnabled) {
-                            alpha = (0.50f * 255).toInt()
-                        }
                     }
                     canvas.nativeCanvas.drawBitmap(bitmap, matrix, paint)
-                }
-            }
-
-            // Excluded from Rotation Pill Indicator
-            if (!photo.isEnabled) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 12.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.VisibilityOff,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Excluded from Rotation",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
                 }
             }
         }

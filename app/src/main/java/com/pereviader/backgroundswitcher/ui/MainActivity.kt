@@ -209,7 +209,8 @@ fun MainAppContent(viewModel: MainViewModel) {
                 onSelectPhotoIndex = { index -> viewModel.selectPreviewPhotoIndex(index) },
                 onPreviousPhoto = { viewModel.previousPreviewPhoto() },
                 onNextPhoto = { viewModel.nextPreviewPhoto() },
-                onTogglePhotoEnabled = { photoId, isEnabled -> viewModel.togglePhotoEnabled(photoId, isEnabled) },
+                onTogglePhotoEnabled = { photoId, isEnabled -> viewModel.togglePhotoSelection(photoId, isEnabled) },
+                onRemovePhoto = { photoId -> viewModel.removePhotoFromBackgrounds(photoId) },
                 onCustomizationChanged = { photoId, cropX, cropY, zoom ->
                     viewModel.updatePhotoCustomization(photoId, cropX, cropY, zoom)
                 },
@@ -225,6 +226,9 @@ fun MainAppContent(viewModel: MainViewModel) {
                 onSyncGooglePhotosAlbum = { id -> viewModel.syncGooglePhotosAlbum(id) },
                 onDeleteAlbum = { id -> viewModel.deleteAlbum(id) },
                 getPhotosForAlbum = { id -> viewModel.getPhotosForAlbum(id) },
+                onTogglePhotoSelection = { photoId, isSelected ->
+                    viewModel.togglePhotoSelection(photoId, isSelected)
+                },
                 onOpenAlbumInPreview = { albumId, photoId ->
                     viewModel.openAlbumInPreview(albumId, photoId)
                     selectedTab = 0

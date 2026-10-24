@@ -259,15 +259,46 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `togglePhotoEnabled delegates to wallpaperRepository`() = runTest(testDispatcher) {
+    fun `togglePhotoSelection delegates to wallpaperRepository`() = runTest(testDispatcher) {
         val viewModel = createViewModel()
         subscribeAll(viewModel)
         advanceUntilIdle()
 
-        viewModel.togglePhotoEnabled("p1", false)
+        viewModel.togglePhotoSelection("p1", false)
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { wallpaperRepository.togglePhotoEnabled("p1", false) }
+        coVerify(exactly = 1) { wallpaperRepository.togglePhotoSelection("p1", false) }
+    }
+
+    @Test
+    fun `removePhotoFromBackgrounds removes photo from previewPhotos and clamps index`() = runTest(testDispatcher) {
+        val photo1 = PhotoItem(id = "p1", albumId = "a1", uri = "content://media/1", isSelected = true)
+        val photo2 = PhotoItem(id = "p2", albumId = "a1", uri = "content://media/2", isSelected = true)
+        val photo3 = PhotoItem(id = "p3", albumId = "a1", uri = "content://media/3", isSelected = true)
+
+        selectedPhotosFlow.value = listOf(photo1, photo2, photo3)
+        activePhotoFlow.value = photo1
+
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        // Navigate to the last photo (index 2 -> p3)
+        viewModel.selectPreviewPhotoIndex(2)
+        advanceTimeBy(100L)
+        assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(2)
+        assertThat(viewModel.currentPreviewPhoto.value?.id).isEqualTo("p3")
+
+        // Remove p3 from backgrounds
+        viewModel.removePhotoFromBackgrounds("p3")
+        selectedPhotosFlow.value = listOf(photo1, photo2)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { wallpaperRepository.togglePhotoSelection("p3", false) }
+        assertThat(viewModel.previewPhotos.value.map { it.id }).containsExactly("p1", "p2").inOrder()
+        // Index should clamp from 2 to 1 (p2)
+        assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(1)
+        assertThat(viewModel.currentPreviewPhoto.value?.id).isEqualTo("p2")
     }
 
     @Test

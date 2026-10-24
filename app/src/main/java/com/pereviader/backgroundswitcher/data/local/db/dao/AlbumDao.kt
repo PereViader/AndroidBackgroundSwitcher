@@ -14,7 +14,7 @@ interface AlbumDao {
     @Query("SELECT * FROM albums ORDER BY name ASC")
     fun getAllAlbums(): Flow<List<AlbumEntity>>
 
-    @Query("SELECT * FROM albums WHERE isSelected = 1")
+    @Query("SELECT * FROM albums WHERE isSelected = 1 OR id IN (SELECT DISTINCT albumId FROM photos WHERE isSelected = 1)")
     fun getSelectedAlbums(): Flow<List<AlbumEntity>>
 
     @Query("SELECT * FROM albums WHERE id = :id LIMIT 1")

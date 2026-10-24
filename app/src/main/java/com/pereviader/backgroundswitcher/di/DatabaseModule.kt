@@ -84,6 +84,64 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS photos_new (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    albumId TEXT NOT NULL,
+                    uri TEXT NOT NULL,
+                    width INTEGER NOT NULL,
+                    height INTEGER NOT NULL,
+                    dateAdded INTEGER NOT NULL,
+                    lastDisplayedAt INTEGER NOT NULL,
+                    cropX REAL,
+                    cropY REAL,
+                    zoom REAL,
+                    isSelected INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                INSERT INTO photos_new (id, albumId, uri, width, height, dateAdded, lastDisplayedAt, cropX, cropY, zoom, isSelected)
+                SELECT p.id, p.albumId, p.uri, p.width, p.height, p.dateAdded, p.lastDisplayedAt, p.cropX, p.cropY, p.zoom,
+                       CASE WHEN a.isSelected = 1 AND p.isEnabled = 1 THEN 1 ELSE 0 END
+                FROM photos p
+                LEFT JOIN albums a ON p.albumId = a.id
+                """.trimIndent()
+            )
+            database.execSQL("DROP TABLE photos")
+            database.execSQL("ALTER TABLE photos_new RENAME TO photos")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_photos_albumId ON photos(albumId)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_photos_lastDisplayedAt ON photos(lastDisplayedAt)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_photos_uri ON photos(uri)")
+
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS wallpaper_customizations_new (
+                    imageUri TEXT NOT NULL PRIMARY KEY,
+                    cropX REAL,
+                    cropY REAL,
+                    zoom REAL,
+                    isSelected INTEGER NOT NULL DEFAULT 0,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                INSERT INTO wallpaper_customizations_new (imageUri, cropX, cropY, zoom, isSelected, updatedAt)
+                SELECT imageUri, cropX, cropY, zoom, isEnabled, updatedAt
+                FROM wallpaper_customizations
+                """.trimIndent()
+            )
+            database.execSQL("DROP TABLE wallpaper_customizations")
+            database.execSQL("ALTER TABLE wallpaper_customizations_new RENAME TO wallpaper_customizations")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -91,7 +149,7 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "background_switcher.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .fallbackToDestructiveMigration()
             .build()
     }

@@ -120,30 +120,30 @@ class WallpaperRepositoryImplTest {
     }
 
     @Test
-    fun `togglePhotoEnabled with false saves exclusion in DAO and updates photos table`() = runTest {
+    fun `togglePhotoSelection with false saves deselection in DAO and updates photos table`() = runTest {
         val photo = PhotoEntity(
             id = "photo_1",
             albumId = "album_1",
             uri = "content://media/external/images/media/42",
-            isEnabled = true
+            isSelected = true
         )
         coEvery { photoDao.getPhotoById("photo_1") } returns photo
         coEvery { wallpaperCustomizationDao.getCustomization("content://media/external/images/media/42") } returns null
 
-        repository.togglePhotoEnabled("photo_1", false)
+        repository.togglePhotoSelection("photo_1", false)
 
-        coVerify { photoDao.updatePhotoEnabled("photo_1", false) }
+        coVerify { photoDao.updatePhotoSelection("photo_1", false) }
         coVerify {
             wallpaperCustomizationDao.insertOrUpdate(
                 match {
-                    it.imageUri == "content://media/external/images/media/42" && !it.isEnabled
+                    it.imageUri == "content://media/external/images/media/42" && !it.isSelected
                 }
             )
         }
     }
 
     @Test
-    fun `togglePhotoEnabled with true preserves existing customization in DAO and enables photo`() = runTest {
+    fun `togglePhotoSelection with true preserves existing customization in DAO and selects photo`() = runTest {
         val photo = PhotoEntity(
             id = "photo_1",
             albumId = "album_1",
@@ -151,7 +151,7 @@ class WallpaperRepositoryImplTest {
             cropX = 0.5f,
             cropY = 0.5f,
             zoom = 1.0f,
-            isEnabled = false
+            isSelected = false
         )
         coEvery { photoDao.getPhotoById("photo_1") } returns photo
         coEvery { wallpaperCustomizationDao.getCustomization("content://media/external/images/media/42") } returns WallpaperCustomizationEntity(
@@ -159,12 +159,12 @@ class WallpaperRepositoryImplTest {
             cropX = 0.5f,
             cropY = 0.5f,
             zoom = 1.0f,
-            isEnabled = false
+            isSelected = false
         )
 
-        repository.togglePhotoEnabled("photo_1", true)
+        repository.togglePhotoSelection("photo_1", true)
 
-        coVerify { photoDao.updatePhotoEnabled("photo_1", true) }
+        coVerify { photoDao.updatePhotoSelection("photo_1", true) }
         coVerify {
             wallpaperCustomizationDao.insertOrUpdate(
                 match {
@@ -172,7 +172,7 @@ class WallpaperRepositoryImplTest {
                         it.cropX == 0.5f &&
                         it.cropY == 0.5f &&
                         it.zoom == 1.0f &&
-                        it.isEnabled
+                        it.isSelected
                 }
             )
         }

@@ -1,6 +1,7 @@
 package com.pereviader.backgroundswitcher.ui.albums
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -75,6 +77,7 @@ fun AlbumSelectionScreen(
     onSyncGooglePhotosAlbum: (String) -> Unit,
     onDeleteAlbum: (String) -> Unit,
     getPhotosForAlbum: (String) -> Flow<List<PhotoItem>>,
+    onTogglePhotoSelection: (photoId: String, isSelected: Boolean) -> Unit = { _, _ -> },
     onOpenAlbumInPreview: (albumId: String, photoId: String?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -174,6 +177,10 @@ fun AlbumSelectionScreen(
                     selectedAlbumForDetails = null
                     albumToDelete = album
                 },
+                onToggleAlbumSelection = { selectAll ->
+                    onToggleAlbum(album.id, selectAll)
+                },
+                onTogglePhotoSelection = onTogglePhotoSelection,
                 onOpenInPreview = { photoId ->
                     selectedAlbumForDetails = null
                     onOpenAlbumInPreview(album.id, photoId)
@@ -261,7 +268,9 @@ private fun AlbumCard(
                 Checkbox(
                     checked = album.isSelected,
                     onCheckedChange = { onToggle(it) },
-                    modifier = Modifier.align(Alignment.TopEnd)
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .testTag("album_checkbox_${album.id}")
                 )
 
                 // Source indicator badge
@@ -306,7 +315,11 @@ private fun AlbumCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "${album.photoCount} photos",
+                    text = if (album.selectedPhotoCount > 0) {
+                        "${album.selectedPhotoCount} / ${album.photoCount} selected"
+                    } else {
+                        "${album.photoCount} photos"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -350,10 +363,14 @@ private fun AlbumPhotosDialog(
     onDismiss: () -> Unit,
     onSync: () -> Unit,
     onDelete: () -> Unit,
+    onToggleAlbumSelection: (Boolean) -> Unit,
+    onTogglePhotoSelection: (photoId: String, isSelected: Boolean) -> Unit,
     onOpenInPreview: (photoId: String?) -> Unit
 ) {
     val photos by photosFlow.collectAsState(initial = emptyList())
     val isGooglePhotos = album.source == AlbumSource.GOOGLE_PHOTOS_SHARE
+    val selectedCount = photos.count { it.isSelected }
+    val allSelected = photos.isNotEmpty() && selectedCount == photos.size
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -385,14 +402,24 @@ private fun AlbumPhotosDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${photos.size} photos • ${if (isGooglePhotos) "Google Photos" else "Device Album"}",
+                        text = "$selectedCount / ${photos.size} selected • ${if (isGooglePhotos) "Google Photos" else "Device Album"}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    TextButton(onClick = { onOpenInPreview(null) }) {
-                        Icon(Icons.Default.Preview, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Preview & Edit", style = MaterialTheme.typography.labelMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (photos.isNotEmpty()) {
+                            TextButton(onClick = { onToggleAlbumSelection(!allSelected) }) {
+                                Text(
+                                    text = if (allSelected) "Deselect All" else "Select All",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                        TextButton(onClick = { onOpenInPreview(null) }) {
+                            Icon(Icons.Default.Preview, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Preview & Edit", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }
@@ -437,7 +464,17 @@ private fun AlbumPhotosDialog(
                                     .fillMaxWidth()
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .clickable { onOpenInPreview(photo.id) }
+                                    .border(
+                                        width = if (photo.isSelected) 2.5.dp else 1.dp,
+                                        color = if (photo.isSelected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.outlineVariant
+                                        },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { onTogglePhotoSelection(photo.id, !photo.isSelected) }
+                                    .testTag("album_photo_${photo.id}")
                             ) {
                                 AsyncImage(
                                     model = photo.uri,
@@ -446,31 +483,20 @@ private fun AlbumPhotosDialog(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer {
-                                            if (!photo.isEnabled) {
-                                                alpha = 0.45f
+                                            if (!photo.isSelected) {
+                                                alpha = 0.65f
                                             }
                                         }
                                 )
-                                if (!photo.isEnabled) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.4f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = MaterialTheme.colorScheme.error
-                                        ) {
-                                            Text(
-                                                text = "OFF",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onError,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                }
+                                Checkbox(
+                                    checked = photo.isSelected,
+                                    onCheckedChange = { isChecked ->
+                                        onTogglePhotoSelection(photo.id, isChecked)
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .testTag("photo_toggle_${photo.id}")
+                                )
                             }
                         }
                     }

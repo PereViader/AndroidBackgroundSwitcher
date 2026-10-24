@@ -90,7 +90,7 @@ class WallpaperRepositoryImpl @Inject constructor(
                 cropX = it.cropX,
                 cropY = it.cropY,
                 zoom = it.zoom,
-                isEnabled = it.isEnabled
+                isSelected = it.isSelected
             )
         }
     }
@@ -173,7 +173,7 @@ class WallpaperRepositoryImpl @Inject constructor(
                 cropX = it.cropX,
                 cropY = it.cropY,
                 zoom = it.zoom,
-                isEnabled = it.isEnabled
+                isSelected = it.isSelected
             )
         }
     }
@@ -182,27 +182,29 @@ class WallpaperRepositoryImpl @Inject constructor(
         updatePhotoCustomization(photoId, cropX, cropY, null)
     }
 
-    override suspend fun togglePhotoEnabled(photoId: String, isEnabled: Boolean) = withContext(Dispatchers.IO) {
+    override suspend fun togglePhotoSelection(photoId: String, isSelected: Boolean) = withContext(Dispatchers.IO) {
         val photo = photoDao.getPhotoById(photoId) ?: return@withContext
-        photoDao.updatePhotoEnabled(photoId, isEnabled)
+        photoDao.updatePhotoSelection(photoId, isSelected)
         val uri = photo.uri
         val customization = wallpaperCustomizationDao.getCustomization(uri)
         val cropX = customization?.cropX ?: photo.cropX
         val cropY = customization?.cropY ?: photo.cropY
         val zoom = customization?.zoom ?: photo.zoom
 
-        if (customization != null || !isEnabled || cropX != null || cropY != null || zoom != null) {
-            wallpaperCustomizationDao.insertOrUpdate(
-                WallpaperCustomizationEntity(
-                    imageUri = uri,
-                    cropX = cropX,
-                    cropY = cropY,
-                    zoom = zoom,
-                    isEnabled = isEnabled,
-                    updatedAt = System.currentTimeMillis()
-                )
+        wallpaperCustomizationDao.insertOrUpdate(
+            WallpaperCustomizationEntity(
+                imageUri = uri,
+                cropX = cropX,
+                cropY = cropY,
+                zoom = zoom,
+                isSelected = isSelected,
+                updatedAt = System.currentTimeMillis()
             )
-        }
+        )
+    }
+
+    override suspend fun togglePhotoEnabled(photoId: String, isEnabled: Boolean) {
+        togglePhotoSelection(photoId, isEnabled)
     }
 
     override suspend fun updatePhotoCustomization(
@@ -213,7 +215,7 @@ class WallpaperRepositoryImpl @Inject constructor(
     ) = withContext(Dispatchers.IO) {
         val photo = photoDao.getPhotoById(photoId)
         val uri = photo?.uri
-        val currentEnabled = photo?.isEnabled ?: true
+        val currentSelected = photo?.isSelected ?: false
 
         if (uri != null) {
             wallpaperCustomizationDao.insertOrUpdate(
@@ -222,7 +224,7 @@ class WallpaperRepositoryImpl @Inject constructor(
                     cropX = cropX,
                     cropY = cropY,
                     zoom = zoom,
-                    isEnabled = currentEnabled,
+                    isSelected = currentSelected,
                     updatedAt = System.currentTimeMillis()
                 )
             )
@@ -281,7 +283,7 @@ class WallpaperRepositoryImpl @Inject constructor(
             cropX = entity.cropX,
             cropY = entity.cropY,
             zoom = entity.zoom,
-            isEnabled = entity.isEnabled
+            isSelected = entity.isSelected
         )
 
         val dimensions = ScreenMetricsHelper.getScreenDimensions(context)
@@ -305,7 +307,7 @@ class WallpaperRepositoryImpl @Inject constructor(
                 cropX = it.cropX,
                 cropY = it.cropY,
                 zoom = it.zoom,
-                isEnabled = it.isEnabled
+                isSelected = it.isSelected
             )
         } ?: photo
 

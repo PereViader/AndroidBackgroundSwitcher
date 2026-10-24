@@ -145,7 +145,7 @@ class PreviewScreenTest {
     }
 
     @Test
-    fun `long press opens Photo Options modal and clicking Set as Wallpaper invokes callback`() {
+    fun `long press opens Photo Options modal with Remove from Backgrounds and clicking Set as Wallpaper invokes callback`() {
         var selectedPhoto: PhotoItem? = null
 
         composeTestRule.setContent {
@@ -169,11 +169,40 @@ class PreviewScreenTest {
         }
 
         composeTestRule.onNodeWithText("Photo Options").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Exclude from Rotation").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Remove from Backgrounds").assertIsDisplayed()
 
         // Click "Set as Wallpaper" inside the modal (since there are two nodes with "Set as Wallpaper" — quick action bar and modal, pick the last/modal one or use onNodeWithText)
         composeTestRule.onAllNodes(androidx.compose.ui.test.hasText("Set as Wallpaper"))[1].performClick()
         assert(selectedPhoto?.id == "p2")
+    }
+
+    @Test
+    fun `long press and clicking Remove from Backgrounds invokes onRemovePhoto callback`() {
+        var removedPhotoId: String? = null
+
+        composeTestRule.setContent {
+            PreviewScreen(
+                photos = listOf(samplePhoto1, samplePhoto2),
+                currentIndex = 1,
+                currentPhoto = samplePhoto2,
+                activeWallpaperPhotoId = "p1",
+                isLiveWallpaperActive = true,
+                onSelectPhotoIndex = {},
+                onPreviousPhoto = {},
+                onNextPhoto = {},
+                onRemovePhoto = { removedPhotoId = it },
+                onCustomizationChanged = { _, _, _, _ -> },
+                onSetAsWallpaper = {}
+            )
+        }
+
+        composeTestRule.onNodeWithTag("photo_preview").performTouchInput {
+            longClick()
+        }
+
+        composeTestRule.onNodeWithText("Remove from Backgrounds").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Remove from Backgrounds").performClick()
+        assert(removedPhotoId == "p2")
     }
 
     @Test

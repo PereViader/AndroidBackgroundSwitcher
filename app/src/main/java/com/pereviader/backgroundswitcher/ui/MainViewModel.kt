@@ -67,26 +67,33 @@ class MainViewModel @Inject constructor(
     private val _userSelectedPhoto = MutableStateFlow<PhotoItem?>(null)
     val userSelectedPhoto: StateFlow<PhotoItem?> = _userSelectedPhoto.asStateFlow()
 
+    private val _removedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
+
     // The list of preview photos always ensures the currently active wallpaper photo is included
-    // so the user is always able to inspect and edit its framing immediately, along with album photos.
+    // so the user is always able to inspect and edit its framing immediately, along with selected photos.
     val previewPhotos: StateFlow<List<PhotoItem>> = combine(
         photosFromSelectedAlbums,
         activeWallpaperPhoto,
-        _userSelectedPhoto
-    ) { selectedPhotos, activePhoto, userPhoto ->
+        _userSelectedPhoto,
+        _removedPhotoIds
+    ) { selectedPhotos, activePhoto, userPhoto, removedIds ->
         val result = mutableListOf<PhotoItem>()
-        // If the active wallpaper photo exists and is not present in selected photos, prepend it
-        if (activePhoto != null && selectedPhotos.none { it.id == activePhoto.id || it.uri == activePhoto.uri }) {
+        // If the active wallpaper photo exists, was not explicitly removed, and is not present in selected photos, prepend it
+        if (activePhoto != null &&
+            activePhoto.id !in removedIds &&
+            selectedPhotos.none { it.id == activePhoto.id || it.uri == activePhoto.uri }
+        ) {
             result.add(activePhoto)
         }
         // If a user-selected photo exists and is not already present, include it
         if (userPhoto != null &&
+            userPhoto.id !in removedIds &&
             (activePhoto == null || (userPhoto.id != activePhoto.id && userPhoto.uri != activePhoto.uri)) &&
             selectedPhotos.none { it.id == userPhoto.id || it.uri == userPhoto.uri }
         ) {
             result.add(userPhoto)
         }
-        result.addAll(selectedPhotos)
+        result.addAll(selectedPhotos.filter { it.id !in removedIds })
         result
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -136,11 +143,14 @@ class MainViewModel @Inject constructor(
 
         // Keep preview page displaying the active wallpaper photo by default,
         // unless the user has actively selected a different photo in this session.
+        var lastSeenActivePhotoId: String? = null
         viewModelScope.launch {
             combine(previewPhotos, activeWallpaperPhoto) { photos, activePhoto ->
                 photos to activePhoto
             }.collectLatest { (photos, activePhoto) ->
-                if (photos.isNotEmpty()) {
+                if (photos.isEmpty()) {
+                    _selectedPreviewPhotoIndex.value = 0
+                } else {
                     if (_userSelectedPhoto.value != null && activePhoto != null &&
                         (_userSelectedPhoto.value?.id == activePhoto.id || _userSelectedPhoto.value?.uri == activePhoto.uri)
                     ) {
@@ -154,9 +164,10 @@ class MainViewModel @Inject constructor(
                         } else if (_selectedPreviewPhotoIndex.value >= photos.size) {
                             _selectedPreviewPhotoIndex.value = photos.size - 1
                         }
-                    } else if (activePhoto != null) {
+                    } else if (activePhoto != null && activePhoto.id != lastSeenActivePhotoId) {
                         val activeIdx = photos.indexOfFirst { it.id == activePhoto.id || it.uri == activePhoto.uri }
                         if (activeIdx >= 0) {
+                            lastSeenActivePhotoId = activePhoto.id
                             _selectedPreviewPhotoIndex.value = activeIdx
                         } else if (_selectedPreviewPhotoIndex.value >= photos.size) {
                             _selectedPreviewPhotoIndex.value = photos.size - 1
@@ -264,10 +275,31 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun togglePhotoEnabled(photoId: String, isEnabled: Boolean) {
-        viewModelScope.launch {
-            wallpaperRepository.togglePhotoEnabled(photoId, isEnabled)
+    fun togglePhotoSelection(photoId: String, isSelected: Boolean) {
+        if (!isSelected) {
+            _removedPhotoIds.value = _removedPhotoIds.value + photoId
+            if (_userSelectedPhoto.value?.id == photoId) {
+                _userSelectedPhoto.value = null
+            }
+            if (pendingWallpaperPhoto?.id == photoId) {
+                pendingWallpaperPhoto = null
+                updateWallpaperDebounceJob?.cancel()
+                updateWallpaperDebounceJob = null
+            }
+        } else {
+            _removedPhotoIds.value = _removedPhotoIds.value - photoId
         }
+        viewModelScope.launch {
+            wallpaperRepository.togglePhotoSelection(photoId, isSelected)
+        }
+    }
+
+    fun removePhotoFromBackgrounds(photoId: String) {
+        togglePhotoSelection(photoId, false)
+    }
+
+    fun togglePhotoEnabled(photoId: String, isEnabled: Boolean) {
+        togglePhotoSelection(photoId, isEnabled)
     }
 
     fun checkLiveWallpaperStatus() {
@@ -343,6 +375,9 @@ class MainViewModel @Inject constructor(
     }
 
     fun toggleAlbum(albumId: String, isSelected: Boolean) {
+        if (isSelected) {
+            _removedPhotoIds.value = emptySet()
+        }
         viewModelScope.launch {
             toggleAlbumSelectionUseCase(albumId, isSelected)
         }

@@ -188,7 +188,7 @@ class AlbumRepositoryImplTest {
     }
 
     @Test
-    fun `syncGooglePhotosAlbum preserves exclusion state from customizations`() = runTest {
+    fun `syncGooglePhotosAlbum preserves selection state from customizations`() = runTest {
         val albumId = "gp_123"
         val savedUrl = "https://photos.app.goo.gl/myAlbum"
         val existingEntity = AlbumEntity(
@@ -205,7 +205,7 @@ class AlbumRepositoryImplTest {
         coEvery { albumDao.getAlbumById(albumId) } returns existingEntity
         coEvery { wallpaperCustomizationDao.getCustomization("https://lh3.googleusercontent.com/1=s2560") } returns WallpaperCustomizationEntity(
             imageUri = "https://lh3.googleusercontent.com/1=s2560",
-            isEnabled = false
+            isSelected = false
         )
 
         val refreshedAlbum = Album(
@@ -231,9 +231,32 @@ class AlbumRepositoryImplTest {
         coVerify {
             photoDao.insertOrUpdateAll(match { list ->
                 val p1 = list.first { it.id == "p1" }
-                !p1.isEnabled
+                !p1.isSelected
             })
         }
+    }
+
+    @Test
+    fun `toggleAlbumSelection updates album selection and bulk updates all photos in album`() = runTest {
+        val albumId = "local_1"
+        val albumEntity = AlbumEntity(
+            id = albumId,
+            name = "Camera",
+            coverUri = "uri1",
+            photoCount = 2,
+            source = AlbumSource.LOCAL_MEDIASTORE.name,
+            isSelected = false
+        )
+        coEvery { albumDao.getAlbumById(albumId) } returns albumEntity
+        coEvery { mediaStoreScanner.getPhotosInAlbum(albumId) } returns listOf(
+            PhotoItem(id = "p1", albumId = albumId, uri = "content://media/1"),
+            PhotoItem(id = "p2", albumId = albumId, uri = "content://media/2")
+        )
+
+        repository.toggleAlbumSelection(albumId, true)
+
+        coVerify { albumDao.updateSelection(albumId, true) }
+        coVerify { photoDao.updateAlbumPhotosSelection(albumId, true) }
     }
 
     @Test
@@ -245,7 +268,7 @@ class AlbumRepositoryImplTest {
                 uri = "content://media/1",
                 width = 1080,
                 height = 1920,
-                isEnabled = true
+                isSelected = true
             ),
             PhotoEntity(
                 id = "p2",
@@ -253,7 +276,7 @@ class AlbumRepositoryImplTest {
                 uri = "content://media/2",
                 width = 1080,
                 height = 1920,
-                isEnabled = false
+                isSelected = false
             )
         )
         coEvery { photoDao.getPhotosFromSelectedAlbums() } returns flowOf(photoEntities)
@@ -263,9 +286,9 @@ class AlbumRepositoryImplTest {
         result.collect { photos ->
             assertThat(photos).hasSize(2)
             assertThat(photos[0].id).isEqualTo("p1")
-            assertThat(photos[0].isEnabled).isTrue()
+            assertThat(photos[0].isSelected).isTrue()
             assertThat(photos[1].id).isEqualTo("p2")
-            assertThat(photos[1].isEnabled).isFalse()
+            assertThat(photos[1].isSelected).isFalse()
         }
     }
 }

@@ -13,13 +13,14 @@ interface PhotoDao {
     @Query("SELECT * FROM photos WHERE albumId = :albumId ORDER BY dateAdded DESC")
     fun getPhotosByAlbum(albumId: String): Flow<List<PhotoEntity>>
 
-    @Query("""
-        SELECT p.* FROM photos p 
-        INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 
-        ORDER BY p.dateAdded DESC
-    """)
+    @Query("SELECT * FROM photos WHERE isSelected = 1 ORDER BY dateAdded DESC")
+    fun observeSelectedPhotos(): Flow<List<PhotoEntity>>
+
+    @Query("SELECT * FROM photos WHERE isSelected = 1 ORDER BY dateAdded DESC")
     fun getPhotosFromSelectedAlbums(): Flow<List<PhotoEntity>>
+
+    @Query("SELECT * FROM photos")
+    fun observeAllPhotos(): Flow<List<PhotoEntity>>
 
     @Query("SELECT * FROM photos WHERE id = :id LIMIT 1")
     suspend fun getPhotoById(id: String): PhotoEntity?
@@ -51,59 +52,60 @@ interface PhotoDao {
     @Query("UPDATE photos SET cropX = :cropX, cropY = :cropY WHERE uri = :uri")
     suspend fun updateCropByUri(uri: String, cropX: Float?, cropY: Float?)
 
-    @Query("UPDATE photos SET isEnabled = :isEnabled WHERE id = :id")
-    suspend fun updatePhotoEnabled(id: String, isEnabled: Boolean)
+    @Query("UPDATE photos SET isSelected = :isSelected WHERE id = :id")
+    suspend fun updatePhotoSelection(id: String, isSelected: Boolean)
 
-    @Query("UPDATE photos SET isEnabled = :isEnabled WHERE uri = :uri")
-    suspend fun updatePhotoEnabledByUri(uri: String, isEnabled: Boolean)
+    @Query("UPDATE photos SET isSelected = :isSelected WHERE uri = :uri")
+    suspend fun updatePhotoSelectionByUri(uri: String, isSelected: Boolean)
+
+    @Query("UPDATE photos SET isSelected = :isSelected WHERE albumId = :albumId")
+    suspend fun updateAlbumPhotosSelection(albumId: String, isSelected: Boolean)
 
     @Query("""
-        SELECT p.* FROM photos p 
-        INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 AND p.isEnabled = 1
-        ORDER BY p.lastDisplayedAt ASC 
+        SELECT * FROM photos 
+        WHERE isSelected = 1
+        ORDER BY lastDisplayedAt ASC 
         LIMIT 1
     """)
     suspend fun getLeastRecentlyUsedPhoto(): PhotoEntity?
 
     @Query("""
-        SELECT p.* FROM photos p 
-        INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 AND p.isEnabled = 1
+        SELECT * FROM photos 
+        WHERE isSelected = 1
         ORDER BY RANDOM() 
         LIMIT 1
     """)
     suspend fun getRandomPhoto(): PhotoEntity?
 
     @Query("""
-        SELECT p.* FROM photos p 
-        INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 AND p.isEnabled = 1
-        ORDER BY p.dateAdded DESC 
+        SELECT * FROM photos 
+        WHERE isSelected = 1
+        ORDER BY dateAdded DESC 
         LIMIT 1
     """)
     suspend fun getLatestPhoto(): PhotoEntity?
 
     @Query("""
-        SELECT p.* FROM photos p 
-        INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 AND p.isEnabled = 1 AND p.dateAdded > :currentDateAdded
-        ORDER BY p.dateAdded ASC 
+        SELECT * FROM photos 
+        WHERE isSelected = 1 AND dateAdded > :currentDateAdded
+        ORDER BY dateAdded ASC 
         LIMIT 1
     """)
     suspend fun getNextChronologicalPhoto(currentDateAdded: Long): PhotoEntity?
 
     @Query("""
-        SELECT p.* FROM photos p 
-        INNER JOIN albums a ON p.albumId = a.id 
-        WHERE a.isSelected = 1 AND p.isEnabled = 1
-        ORDER BY p.dateAdded ASC 
+        SELECT * FROM photos 
+        WHERE isSelected = 1
+        ORDER BY dateAdded ASC 
         LIMIT 1
     """)
     suspend fun getOldestPhoto(): PhotoEntity?
 
-    @Query("SELECT COUNT(*) FROM photos p INNER JOIN albums a ON p.albumId = a.id WHERE a.isSelected = 1 AND p.isEnabled = 1")
+    @Query("SELECT COUNT(*) FROM photos WHERE isSelected = 1")
     suspend fun getSelectedPhotosCount(): Int
+
+    @Query("SELECT COUNT(*) FROM photos WHERE albumId = :albumId AND isSelected = 1")
+    suspend fun getSelectedPhotosCountByAlbum(albumId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateAll(photos: List<PhotoEntity>)

@@ -12,8 +12,10 @@ import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreAlbumScanner
 import com.pereviader.backgroundswitcher.data.remote.GooglePhotosShareParser
 import com.pereviader.backgroundswitcher.domain.repository.AlbumRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,8 +29,27 @@ class AlbumRepositoryImpl @Inject constructor(
 ) : AlbumRepository {
 
     override fun getAlbums(): Flow<List<Album>> {
-        return albumDao.getAllAlbums().map { entities ->
-            entities.map { it.toDomain() }
+        return combine(
+            albumDao.getAllAlbums(),
+            photoDao.observeAllPhotos().onStart { emit(emptyList()) }
+        ) { entities, allPhotos ->
+            val photosByAlbum = allPhotos.groupBy { it.albumId }
+            entities.map { entity ->
+                val albumPhotos = photosByAlbum[entity.id].orEmpty()
+                if (albumPhotos.isNotEmpty()) {
+                    val selectedCount = albumPhotos.count { it.isSelected }
+                    entity.toDomain(
+                        isSelected = selectedCount > 0,
+                        selectedPhotoCount = selectedCount
+                    )
+                } else {
+                    val selectedCount = if (entity.isSelected) entity.photoCount else 0
+                    entity.toDomain(
+                        isSelected = entity.isSelected,
+                        selectedPhotoCount = selectedCount
+                    )
+                }
+            }
         }
     }
 
@@ -57,11 +78,10 @@ class AlbumRepositoryImpl @Inject constructor(
         }
         albumDao.insertOrUpdateAll(entitiesToSave)
 
-        // For selected local albums, sync their photos
-        val selectedAlbumIds = entitiesToSave.filter { it.isSelected }.map { it.id }
-        for (albumId in selectedAlbumIds) {
-            val scannedPhotos = mediaStoreScanner.getPhotosInAlbum(albumId)
-            val existingDbPhotos = photoDao.getPhotosListByAlbum(albumId)
+        // Sync photos for local albums so individual photos can be browsed and toggled
+        for (album in entitiesToSave) {
+            val scannedPhotos = mediaStoreScanner.getPhotosInAlbum(album.id)
+            val existingDbPhotos = photoDao.getPhotosListByAlbum(album.id)
             val scannedIds = scannedPhotos.map { it.id }.toSet()
 
             // Delete photos from DB that are no longer in MediaStore (deleted from device)
@@ -79,7 +99,7 @@ class AlbumRepositoryImpl @Inject constructor(
                     cropY = customization?.cropY ?: existing?.cropY,
                     zoom = customization?.zoom ?: existing?.zoom,
                     lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
-                    isEnabled = customization?.isEnabled ?: existing?.isEnabled ?: true
+                    isSelected = existing?.isSelected ?: customization?.isSelected ?: false
                 )
             }
             photoDao.insertOrUpdateAll(photosToSave)
@@ -91,10 +111,10 @@ class AlbumRepositoryImpl @Inject constructor(
 
     override suspend fun toggleAlbumSelection(albumId: String, isSelected: Boolean) {
         albumDao.updateSelection(albumId, isSelected)
-        if (isSelected) {
-            val album = albumDao.getAlbumById(albumId)
-            if (album != null && album.source == AlbumSource.LOCAL_MEDIASTORE.name) {
-                val photos = mediaStoreScanner.getPhotosInAlbum(albumId)
+        val album = albumDao.getAlbumById(albumId)
+        if (album != null && album.source == AlbumSource.LOCAL_MEDIASTORE.name) {
+            val photos = mediaStoreScanner.getPhotosInAlbum(albumId)
+            if (photos.isNotEmpty()) {
                 val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.id }
                 val photosToSave = photos.map { photo ->
                     val existing = existingPhotos[photo.id]
@@ -104,10 +124,24 @@ class AlbumRepositoryImpl @Inject constructor(
                         cropY = customization?.cropY ?: existing?.cropY,
                         zoom = customization?.zoom ?: existing?.zoom,
                         lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
-                        isEnabled = customization?.isEnabled ?: existing?.isEnabled ?: true
+                        isSelected = isSelected
                     )
                 }
                 photoDao.insertOrUpdateAll(photosToSave)
+            }
+        }
+        photoDao.updateAlbumPhotosSelection(albumId, isSelected)
+
+        val albumPhotos = photoDao.getPhotosListByAlbum(albumId)
+        for (photo in albumPhotos) {
+            val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
+            if (customization != null && customization.isSelected != isSelected) {
+                wallpaperCustomizationDao.insertOrUpdate(
+                    customization.copy(
+                        isSelected = isSelected,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
             }
         }
     }
@@ -124,12 +158,15 @@ class AlbumRepositoryImpl @Inject constructor(
                     cropX = customization?.cropX,
                     cropY = customization?.cropY,
                     zoom = customization?.zoom,
-                    isEnabled = customization?.isEnabled ?: true
+                    isSelected = customization?.isSelected ?: true
                 )
             }
             photoDao.insertOrUpdateAll(photosToSave)
             wallpaperCustomizationDao.deleteOrphanedCustomizations()
-            parsed.album.copy(isSelected = true)
+            parsed.album.copy(
+                isSelected = true,
+                selectedPhotoCount = photosToSave.count { it.isSelected }
+            )
         }
     }
 
@@ -156,14 +193,14 @@ class AlbumRepositoryImpl @Inject constructor(
                     cropY = customization?.cropY ?: existing?.cropY,
                     zoom = customization?.zoom ?: existing?.zoom,
                     lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
-                    isEnabled = customization?.isEnabled ?: existing?.isEnabled ?: true
+                    isSelected = customization?.isSelected ?: existing?.isSelected ?: album.isSelected
                 )
             }
             albumDao.insertOrUpdate(updatedEntity)
             photoDao.deletePhotosByAlbum(albumId)
             photoDao.insertOrUpdateAll(photosToSave)
             wallpaperCustomizationDao.deleteOrphanedCustomizations()
-            updatedEntity.toDomain()
+            updatedEntity.toDomain(selectedPhotoCount = photosToSave.count { it.isSelected })
         }
     }
 
@@ -190,7 +227,7 @@ class AlbumRepositoryImpl @Inject constructor(
                             cropY = customization?.cropY ?: existing?.cropY,
                             zoom = customization?.zoom ?: existing?.zoom,
                             lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
-                            isEnabled = customization?.isEnabled ?: existing?.isEnabled ?: true
+                            isSelected = existing?.isSelected ?: customization?.isSelected ?: false
                         )
                     }
                     photoDao.insertOrUpdateAll(photosToSave)
@@ -242,6 +279,7 @@ class AlbumRepositoryImpl @Inject constructor(
             photoCount = (existing?.photoCount ?: 0) + uris.size,
             source = AlbumSource.GOOGLE_PHOTOS_SHARE,
             isSelected = true,
+            selectedPhotoCount = (existing?.photoCount ?: 0) + uris.size,
             lastSyncedAt = System.currentTimeMillis()
         )
         val photos = uris.mapIndexed { index, uri ->
@@ -257,7 +295,7 @@ class AlbumRepositoryImpl @Inject constructor(
                 cropX = customization?.cropX,
                 cropY = customization?.cropY,
                 zoom = customization?.zoom,
-                isEnabled = customization?.isEnabled ?: true
+                isSelected = customization?.isSelected ?: true
             )
         }
         albumDao.insertOrUpdate(album.toEntity())
@@ -265,13 +303,17 @@ class AlbumRepositoryImpl @Inject constructor(
         return Result.success(album)
     }
 
-    private fun AlbumEntity.toDomain() = Album(
+    private fun AlbumEntity.toDomain(
+        isSelected: Boolean = this.isSelected,
+        selectedPhotoCount: Int = if (this.isSelected) this.photoCount else 0
+    ) = Album(
         id = id,
         name = name,
         coverUri = coverUri,
         photoCount = photoCount,
         source = runCatching { AlbumSource.valueOf(source) }.getOrDefault(AlbumSource.LOCAL_MEDIASTORE),
         isSelected = isSelected,
+        selectedPhotoCount = selectedPhotoCount,
         lastSyncedAt = lastSyncedAt,
         sourceUrl = sourceUrl
     )
@@ -298,7 +340,7 @@ class AlbumRepositoryImpl @Inject constructor(
         cropX = cropX,
         cropY = cropY,
         zoom = zoom,
-        isEnabled = isEnabled
+        isSelected = isSelected
     )
 
     private fun PhotoItem.toEntity() = PhotoEntity(
@@ -312,6 +354,6 @@ class AlbumRepositoryImpl @Inject constructor(
         cropX = cropX,
         cropY = cropY,
         zoom = zoom,
-        isEnabled = isEnabled
+        isSelected = isSelected
     )
 }
