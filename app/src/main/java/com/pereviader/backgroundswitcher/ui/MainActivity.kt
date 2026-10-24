@@ -128,7 +128,6 @@ fun MainAppContent(viewModel: MainViewModel) {
     val context = LocalContext.current
     val albums by viewModel.albums.collectAsState()
     val settings by viewModel.settings.collectAsState()
-    val activeWallpaperPhoto by viewModel.activeWallpaperPhoto.collectAsState()
     val previewPhotos by viewModel.previewPhotos.collectAsState()
     val selectedPhotoIndex by viewModel.selectedPreviewPhotoIndex.collectAsState()
     val currentPhoto by viewModel.currentPreviewPhoto.collectAsState()
@@ -204,7 +203,6 @@ fun MainAppContent(viewModel: MainViewModel) {
                 photos = previewPhotos,
                 currentIndex = selectedPhotoIndex,
                 currentPhoto = currentPhoto,
-                activeWallpaperPhotoId = activeWallpaperPhoto?.id,
                 isLiveWallpaperActive = isLiveWallpaperActive,
                 onSelectPhotoIndex = { index -> viewModel.selectPreviewPhotoIndex(index) },
                 onPreviousPhoto = { viewModel.previousPreviewPhoto() },

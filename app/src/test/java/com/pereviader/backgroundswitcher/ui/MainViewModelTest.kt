@@ -349,7 +349,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `setPhotoAsWallpaper immediately updates wallpaper, cancels debounce, and emits snackbar`() = runTest(testDispatcher) {
+    fun `setPhotoAsWallpaper immediately updates wallpaper and cancels debounce`() = runTest(testDispatcher) {
         val photo1 = PhotoItem(id = "p1", albumId = "a1", uri = "content://media/1")
         val photo2 = PhotoItem(id = "p2", albumId = "a1", uri = "content://media/2")
         selectedPhotosFlow.value = listOf(photo1, photo2)
@@ -358,13 +358,9 @@ class MainViewModelTest {
 
         val viewModel = createViewModel()
         subscribeAll(viewModel)
-        val emittedEvents = mutableListOf<UiEvent>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            viewModel.eventFlow.collect { emittedEvents.add(it) }
-        }
         advanceUntilIdle()
 
-        // Navigate to photo2 (starts debounce timer) then explicitly click "Set as Wallpaper"
+        // Navigate to photo2 (starts debounce timer) then explicitly set as wallpaper
         viewModel.selectPreviewPhotoIndex(1)
         viewModel.setPhotoAsWallpaper(photo2)
         advanceUntilIdle()
@@ -376,7 +372,6 @@ class MainViewModelTest {
         assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(1)
         assertThat(viewModel.currentPreviewPhoto.value?.id).isEqualTo("p2")
         coVerify(exactly = 1) { wallpaperRepository.setPhotoAsWallpaper(photo2) }
-        assertThat(emittedEvents).contains(UiEvent.ShowSnackbar("Wallpaper updated to selected photo!"))
     }
 
     @Test

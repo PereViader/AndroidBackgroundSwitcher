@@ -238,7 +238,6 @@ class MainViewModel @Inject constructor(
             val result = wallpaperRepository.setPhotoAsWallpaper(photoToApply)
             if (result.isSuccess) {
                 _userSelectedPhoto.value = null
-                _eventFlow.emit(UiEvent.ShowSnackbar("Wallpaper updated to selected photo!"))
             }
         }
     }
@@ -322,9 +321,7 @@ class MainViewModel @Inject constructor(
             val result = wallpaperRepository.setPhotoAsWallpaper(photo)
             if (result.isSuccess) {
                 _userSelectedPhoto.value = null
-                if (isLive) {
-                    _eventFlow.emit(UiEvent.ShowSnackbar("Wallpaper updated to selected photo!"))
-                } else {
+                if (!isLive) {
                     _eventFlow.emit(UiEvent.ShowSnackbar("Wallpaper set as static image. Activate Live Wallpaper for double-tap gestures & 10s rotation!"))
                 }
             } else {

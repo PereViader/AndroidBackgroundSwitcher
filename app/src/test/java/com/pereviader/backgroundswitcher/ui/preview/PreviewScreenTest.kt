@@ -39,13 +39,12 @@ class PreviewScreenTest {
     )
 
     @Test
-    fun `when current photo is active wallpaper, displays Active Wallpaper badge`() {
+    fun `displays photo counter`() {
         composeTestRule.setContent {
             PreviewScreen(
                 photos = listOf(samplePhoto1, samplePhoto2),
                 currentIndex = 0,
                 currentPhoto = samplePhoto1,
-                activeWallpaperPhotoId = "p1",
                 isLiveWallpaperActive = true,
                 onSelectPhotoIndex = {},
                 onPreviousPhoto = {},
@@ -56,40 +55,7 @@ class PreviewScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("Active Wallpaper").assertIsDisplayed()
         composeTestRule.onNodeWithText("1 of 2").assertIsDisplayed()
-    }
-
-    @Test
-    fun `when current photo is not active wallpaper, displays Set as Wallpaper button and click triggers callback`() {
-        var wallpaperSetCalled = false
-        var selectedPhoto: PhotoItem? = null
-
-        composeTestRule.setContent {
-            PreviewScreen(
-                photos = listOf(samplePhoto1, samplePhoto2),
-                currentIndex = 1,
-                currentPhoto = samplePhoto2,
-                activeWallpaperPhotoId = "p1",
-                isLiveWallpaperActive = true,
-                onSelectPhotoIndex = {},
-                onPreviousPhoto = {},
-                onNextPhoto = {},
-                onTogglePhotoEnabled = { _, _ -> },
-                onCustomizationChanged = { _, _, _, _ -> },
-                onSetAsWallpaper = {
-                    wallpaperSetCalled = true
-                    selectedPhoto = it
-                }
-            )
-        }
-
-        composeTestRule.onNodeWithText("Set as Wallpaper").assertIsDisplayed()
-        composeTestRule.onNodeWithText("2 of 2").assertIsDisplayed()
-
-        composeTestRule.onNodeWithText("Set as Wallpaper").performClick()
-        assert(wallpaperSetCalled)
-        assert(selectedPhoto?.id == "p2")
     }
 
     @Test
@@ -102,7 +68,6 @@ class PreviewScreenTest {
                 photos = listOf(samplePhoto1, samplePhoto2),
                 currentIndex = 0,
                 currentPhoto = samplePhoto1,
-                activeWallpaperPhotoId = "p1",
                 isLiveWallpaperActive = true,
                 onSelectPhotoIndex = {},
                 onPreviousPhoto = { prevClicked = true },
@@ -129,7 +94,6 @@ class PreviewScreenTest {
                 photos = listOf(samplePhoto1, samplePhoto2),
                 currentIndex = 0,
                 currentPhoto = samplePhoto1,
-                activeWallpaperPhotoId = "p1",
                 isLiveWallpaperActive = true,
                 onSelectPhotoIndex = { selectedIndex = it },
                 onPreviousPhoto = {},
@@ -145,39 +109,7 @@ class PreviewScreenTest {
     }
 
     @Test
-    fun `long press opens Photo Options modal with Remove from Backgrounds and clicking Set as Wallpaper invokes callback`() {
-        var selectedPhoto: PhotoItem? = null
-
-        composeTestRule.setContent {
-            PreviewScreen(
-                photos = listOf(samplePhoto1, samplePhoto2),
-                currentIndex = 1,
-                currentPhoto = samplePhoto2,
-                activeWallpaperPhotoId = "p1",
-                isLiveWallpaperActive = true,
-                onSelectPhotoIndex = {},
-                onPreviousPhoto = {},
-                onNextPhoto = {},
-                onTogglePhotoEnabled = { _, _ -> },
-                onCustomizationChanged = { _, _, _, _ -> },
-                onSetAsWallpaper = { selectedPhoto = it }
-            )
-        }
-
-        composeTestRule.onNodeWithTag("photo_preview").performTouchInput {
-            longClick()
-        }
-
-        composeTestRule.onNodeWithText("Photo Options").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Remove from Backgrounds").assertIsDisplayed()
-
-        // Click "Set as Wallpaper" inside the modal (since there are two nodes with "Set as Wallpaper" — quick action bar and modal, pick the last/modal one or use onNodeWithText)
-        composeTestRule.onAllNodes(androidx.compose.ui.test.hasText("Set as Wallpaper"))[1].performClick()
-        assert(selectedPhoto?.id == "p2")
-    }
-
-    @Test
-    fun `long press and clicking Remove from Backgrounds invokes onRemovePhoto callback`() {
+    fun `long press opens Photo Options modal and clicking Remove from Backgrounds invokes onRemovePhoto callback`() {
         var removedPhotoId: String? = null
 
         composeTestRule.setContent {
@@ -185,7 +117,6 @@ class PreviewScreenTest {
                 photos = listOf(samplePhoto1, samplePhoto2),
                 currentIndex = 1,
                 currentPhoto = samplePhoto2,
-                activeWallpaperPhotoId = "p1",
                 isLiveWallpaperActive = true,
                 onSelectPhotoIndex = {},
                 onPreviousPhoto = {},
@@ -200,39 +131,9 @@ class PreviewScreenTest {
             longClick()
         }
 
+        composeTestRule.onNodeWithText("Photo Options").assertIsDisplayed()
         composeTestRule.onNodeWithText("Remove from Backgrounds").assertIsDisplayed()
         composeTestRule.onNodeWithText("Remove from Backgrounds").performClick()
         assert(removedPhotoId == "p2")
-    }
-
-    @Test
-    fun `long press on active wallpaper opens modal with Reapply as Wallpaper and clicking invokes callback`() {
-        var reappliedPhoto: PhotoItem? = null
-
-        composeTestRule.setContent {
-            PreviewScreen(
-                photos = listOf(samplePhoto1, samplePhoto2),
-                currentIndex = 0,
-                currentPhoto = samplePhoto1,
-                activeWallpaperPhotoId = "p1",
-                isLiveWallpaperActive = true,
-                onSelectPhotoIndex = {},
-                onPreviousPhoto = {},
-                onNextPhoto = {},
-                onTogglePhotoEnabled = { _, _ -> },
-                onCustomizationChanged = { _, _, _, _ -> },
-                onSetAsWallpaper = { reappliedPhoto = it }
-            )
-        }
-
-        composeTestRule.onNodeWithTag("photo_preview").performTouchInput {
-            longClick()
-        }
-
-        composeTestRule.onNodeWithText("Photo Options").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Reapply as Wallpaper").assertIsDisplayed()
-
-        composeTestRule.onNodeWithText("Reapply as Wallpaper").performClick()
-        assert(reappliedPhoto?.id == "p1")
     }
 }
