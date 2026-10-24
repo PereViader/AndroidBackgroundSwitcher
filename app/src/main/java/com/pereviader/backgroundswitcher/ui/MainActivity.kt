@@ -83,6 +83,13 @@ class MainActivity : ComponentActivity() {
         viewModel.checkLiveWallpaperStatus()
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            viewModel.onAppBackgrounded()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         mediaStoreObserver.unregister()
@@ -121,6 +128,7 @@ fun MainAppContent(viewModel: MainViewModel) {
     val context = LocalContext.current
     val albums by viewModel.albums.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val activeWallpaperPhoto by viewModel.activeWallpaperPhoto.collectAsState()
     val previewPhotos by viewModel.previewPhotos.collectAsState()
     val selectedPhotoIndex by viewModel.selectedPreviewPhotoIndex.collectAsState()
     val currentPhoto by viewModel.currentPreviewPhoto.collectAsState()
@@ -168,13 +176,23 @@ fun MainAppContent(viewModel: MainViewModel) {
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
+                    onClick = {
+                        if (selectedTab == 0) {
+                            viewModel.flushPendingWallpaperUpdate()
+                        }
+                        selectedTab = 1
+                    },
                     icon = { Icon(Icons.Default.PhotoLibrary, contentDescription = "Albums") },
                     label = { Text("Albums") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
+                    onClick = {
+                        if (selectedTab == 0) {
+                            viewModel.flushPendingWallpaperUpdate()
+                        }
+                        selectedTab = 2
+                    },
                     icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                     label = { Text("Settings") }
                 )
@@ -186,6 +204,7 @@ fun MainAppContent(viewModel: MainViewModel) {
                 photos = previewPhotos,
                 currentIndex = selectedPhotoIndex,
                 currentPhoto = currentPhoto,
+                activeWallpaperPhotoId = activeWallpaperPhoto?.id,
                 isLiveWallpaperActive = isLiveWallpaperActive,
                 onSelectPhotoIndex = { index -> viewModel.selectPreviewPhotoIndex(index) },
                 onPreviousPhoto = { viewModel.previousPreviewPhoto() },

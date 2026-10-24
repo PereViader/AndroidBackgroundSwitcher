@@ -71,12 +71,16 @@ class LiveWallpaperService : WallpaperService() {
         private var transitionAnimator: ValueAnimator? = null
         private var transitionJob: Job? = null
         private var activePhotoId: String? = null
+        private var activeCropX: Float? = null
+        private var activeCropY: Float? = null
+        private var activeZoom: Float? = null
         private var targetPhotoId: String? = null
         private var surfaceWidth = 0
         private var surfaceHeight = 0
         private var lastCycleTime = 0L
         private var lastCycleAttemptTime = 0L
         private var lastUnlockCycleTime = 0L
+        private var pendingUnlockCycle = false
         private var isCycling = false
         private var currentSettings: WallpaperSettings = WallpaperSettings()
 
@@ -121,8 +125,12 @@ class LiveWallpaperService : WallpaperService() {
                         if (now - lastUnlockCycleTime < UNLOCK_DEBOUNCE_MILLIS) return
                         lastUnlockCycleTime = now
                         if (currentSettings.isEnabled && currentSettings.cycleOnUnlock) {
-                            Log.d(TAG, "Cycling wallpaper due to ACTION_USER_PRESENT")
-                            cycleWallpaper("user_present")
+                            Log.d(TAG, "Handling ACTION_USER_PRESENT: isVisible=$isVisible")
+                            if (isVisible) {
+                                cycleWallpaper("user_present")
+                            } else {
+                                pendingUnlockCycle = true
+                            }
                         }
                     }
                     Intent.ACTION_SCREEN_ON -> {
@@ -172,9 +180,17 @@ class LiveWallpaperService : WallpaperService() {
             engineScope.launch {
                 wallpaperRepository.getCurrentPhoto().collect { photo ->
                     if (photo != null) {
-                        if (photo.id != activePhotoId && photo.id != targetPhotoId && !isCycling) {
-                            Log.d(TAG, "External photo change detected: ${photo.id}")
-                            transitionToPhoto(photo, reason = "external_selection", animate = (currentBitmap != null))
+                        val isDifferentPhoto = photo.id != activePhotoId && photo.id != targetPhotoId
+                        val isCropChanged = photo.id == activePhotoId &&
+                            (photo.cropX != activeCropX || photo.cropY != activeCropY || photo.zoom != activeZoom)
+
+                        if ((isDifferentPhoto || isCropChanged) && !isCycling) {
+                            Log.d(TAG, "External photo/crop change detected: ${photo.id}, isDifferent=$isDifferentPhoto, isCropChanged=$isCropChanged")
+                            transitionToPhoto(
+                                photo = photo,
+                                reason = if (isCropChanged) "crop_updated" else "external_selection",
+                                animate = (currentBitmap != null && isDifferentPhoto)
+                            )
                         }
                     }
                 }
@@ -241,13 +257,19 @@ class LiveWallpaperService : WallpaperService() {
                         currentSettings = settings
                         val intervalMillis = currentSettings.intervalMillis
                         val intervalElapsed = (lastCycleTime > 0L) && (now - lastCycleTime >= intervalMillis)
-                        val shouldCycleOnUnlock = settings.isEnabled && settings.cycleOnUnlock &&
-                            (now - lastUnlockCycleTime >= UNLOCK_DEBOUNCE_MILLIS)
                         val isInitialLoad = currentBitmap == null
+                        val shouldCycleOnPendingUnlock = pendingUnlockCycle &&
+                            (now - lastUnlockCycleTime < 10_000L) &&
+                            currentSettings.isEnabled && currentSettings.cycleOnUnlock
+                        pendingUnlockCycle = false
 
-                        if (isInitialLoad || intervalElapsed || shouldCycleOnUnlock) {
-                            lastUnlockCycleTime = now
-                            cycleWallpaper("visibility_change")
+                        if (isInitialLoad || intervalElapsed || shouldCycleOnPendingUnlock) {
+                            val reason = when {
+                                shouldCycleOnPendingUnlock -> "pending_user_present"
+                                isInitialLoad -> "initial_visibility"
+                                else -> "visibility_change"
+                            }
+                            cycleWallpaper(reason)
                         } else {
                             drawFrame()
                         }
@@ -303,7 +325,11 @@ class LiveWallpaperService : WallpaperService() {
             currentBitmap = null
             previousBitmap = null
             activePhotoId = null
+            activeCropX = null
+            activeCropY = null
+            activeZoom = null
             targetPhotoId = null
+            pendingUnlockCycle = false
         }
 
         private fun scheduleNextCycle() {
@@ -356,8 +382,11 @@ class LiveWallpaperService : WallpaperService() {
         }
 
         private fun transitionToPhoto(photo: PhotoItem, reason: String, animate: Boolean = true) {
-            if (photo.id == activePhotoId && currentBitmap != null) {
-                Log.d(TAG, "transitionToPhoto ($reason) skipped: photo ${photo.id} already active")
+            val isCropChangeOnly = photo.id == activePhotoId &&
+                (photo.cropX != activeCropX || photo.cropY != activeCropY || photo.zoom != activeZoom)
+
+            if (photo.id == activePhotoId && currentBitmap != null && !isCropChangeOnly) {
+                Log.d(TAG, "transitionToPhoto ($reason) skipped: photo ${photo.id} already active with matching crop")
                 return
             }
             if (photo.id == targetPhotoId && isCycling) {
@@ -378,10 +407,13 @@ class LiveWallpaperService : WallpaperService() {
                     val bitmap = wallpaperRepository.loadAndCropBitmap(photo, width, height)
                     if (bitmap != null) {
                         activePhotoId = photo.id
+                        activeCropX = photo.cropX
+                        activeCropY = photo.cropY
+                        activeZoom = photo.zoom
                         targetPhotoId = null
                         wallpaperRepository.markPhotoDisplayed(photo.id)
                         Log.d(TAG, "transitionToPhoto ($reason) successfully loaded ${photo.id}, starting crossfade")
-                        updateActiveBitmap(bitmap, animateTransition = animate)
+                        updateActiveBitmap(bitmap, animateTransition = (animate && !isCropChangeOnly))
                         scheduleNextCycle()
                     } else {
                         Log.w(TAG, "transitionToPhoto ($reason): Failed to load/crop bitmap for ${photo.id}")
@@ -416,7 +448,9 @@ class LiveWallpaperService : WallpaperService() {
                         Log.w(TAG, "cycleWallpaper ($reason): No candidate photo returned")
                         return@launch
                     }
-                    if (photo.id == activePhotoId && currentBitmap != null) {
+                    if (photo.id == activePhotoId && currentBitmap != null &&
+                        photo.cropX == activeCropX && photo.cropY == activeCropY && photo.zoom == activeZoom
+                    ) {
                         Log.d(TAG, "cycleWallpaper ($reason): Candidate photo ${photo.id} is already active")
                         return@launch
                     }

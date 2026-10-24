@@ -14,7 +14,9 @@ import com.pereviader.backgroundswitcher.domain.usecase.GetWallpaperSettingsUseC
 import com.pereviader.backgroundswitcher.domain.usecase.ToggleAlbumSelectionUseCase
 import com.pereviader.backgroundswitcher.domain.usecase.UpdateWallpaperSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -25,8 +27,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -47,14 +47,48 @@ class MainViewModel @Inject constructor(
     private val workScheduler: WorkScheduler
 ) : ViewModel() {
 
+    companion object {
+        private const val WALLPAPER_UPDATE_DEBOUNCE_MILLIS = 1500L
+    }
+
     val albums: StateFlow<List<Album>> = getAlbumsUseCase()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val settings: StateFlow<WallpaperSettings> = getWallpaperSettingsUseCase()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WallpaperSettings())
 
-    val previewPhotos: StateFlow<List<PhotoItem>> = albumRepository.getPhotosFromSelectedAlbums()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val activeWallpaperPhoto: StateFlow<PhotoItem?> = wallpaperRepository.getCurrentPhoto()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val photosFromSelectedAlbums: Flow<List<PhotoItem>> =
+        albumRepository.getPhotosFromSelectedAlbums()
+
+    // Holds a user-selected photo from browsing (e.g. albums dialog or filmstrip)
+    private val _userSelectedPhoto = MutableStateFlow<PhotoItem?>(null)
+    val userSelectedPhoto: StateFlow<PhotoItem?> = _userSelectedPhoto.asStateFlow()
+
+    // The list of preview photos always ensures the currently active wallpaper photo is included
+    // so the user is always able to inspect and edit its framing immediately, along with album photos.
+    val previewPhotos: StateFlow<List<PhotoItem>> = combine(
+        photosFromSelectedAlbums,
+        activeWallpaperPhoto,
+        _userSelectedPhoto
+    ) { selectedPhotos, activePhoto, userPhoto ->
+        val result = mutableListOf<PhotoItem>()
+        // If the active wallpaper photo exists and is not present in selected photos, prepend it
+        if (activePhoto != null && selectedPhotos.none { it.id == activePhoto.id || it.uri == activePhoto.uri }) {
+            result.add(activePhoto)
+        }
+        // If a user-selected photo exists and is not already present, include it
+        if (userPhoto != null &&
+            (activePhoto == null || (userPhoto.id != activePhoto.id && userPhoto.uri != activePhoto.uri)) &&
+            selectedPhotos.none { it.id == userPhoto.id || it.uri == userPhoto.uri }
+        ) {
+            result.add(userPhoto)
+        }
+        result.addAll(selectedPhotos)
+        result
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _selectedPreviewPhotoIndex = MutableStateFlow(0)
     val selectedPreviewPhotoIndex: StateFlow<Int> = _selectedPreviewPhotoIndex.asStateFlow()
@@ -69,7 +103,7 @@ class MainViewModel @Inject constructor(
         } else {
             null
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val previewPhoto: StateFlow<PhotoItem?> = currentPreviewPhoto
 
@@ -81,6 +115,10 @@ class MainViewModel @Inject constructor(
 
     private val _eventFlow = MutableSharedFlow<UiEvent>()
     val eventFlow: SharedFlow<UiEvent> = _eventFlow.asSharedFlow()
+
+    private var updateWallpaperDebounceJob: Job? = null
+    private var pendingWallpaperPhoto: PhotoItem? = null
+    private var hasPendingCustomization: Boolean = false
 
     init {
         refreshAlbums()
@@ -95,30 +133,129 @@ class MainViewModel @Inject constructor(
                 workScheduler.schedulePeriodicSync(currentSettings.onlyOnWifi)
             }
         }
+
+        // Keep preview page displaying the active wallpaper photo by default,
+        // unless the user has actively selected a different photo in this session.
         viewModelScope.launch {
-            previewPhotos.collectLatest { photos ->
-                if (photos.isNotEmpty() && _selectedPreviewPhotoIndex.value >= photos.size) {
-                    _selectedPreviewPhotoIndex.value = photos.size - 1
+            combine(previewPhotos, activeWallpaperPhoto) { photos, activePhoto ->
+                photos to activePhoto
+            }.collectLatest { (photos, activePhoto) ->
+                if (photos.isNotEmpty()) {
+                    val userPhoto = _userSelectedPhoto.value
+                    if (userPhoto != null) {
+                        val userIdx = photos.indexOfFirst { it.id == userPhoto.id || it.uri == userPhoto.uri }
+                        if (userIdx >= 0) {
+                            _selectedPreviewPhotoIndex.value = userIdx
+                        } else if (_selectedPreviewPhotoIndex.value >= photos.size) {
+                            _selectedPreviewPhotoIndex.value = photos.size - 1
+                        }
+                    } else if (activePhoto != null) {
+                        val activeIdx = photos.indexOfFirst { it.id == activePhoto.id || it.uri == activePhoto.uri }
+                        if (activeIdx >= 0) {
+                            _selectedPreviewPhotoIndex.value = activeIdx
+                        } else if (_selectedPreviewPhotoIndex.value >= photos.size) {
+                            _selectedPreviewPhotoIndex.value = photos.size - 1
+                        }
+                    } else if (_selectedPreviewPhotoIndex.value >= photos.size) {
+                        _selectedPreviewPhotoIndex.value = photos.size - 1
+                    }
                 }
             }
         }
     }
 
     fun selectPreviewPhotoIndex(index: Int) {
-        _selectedPreviewPhotoIndex.value = index
+        val photos = previewPhotos.value
+        if (index in photos.indices) {
+            _selectedPreviewPhotoIndex.value = index
+            onPhotoSelectedByUser(photos[index])
+        }
     }
 
     fun nextPreviewPhoto() {
-        val count = previewPhotos.value.size
-        if (count > 0) {
-            _selectedPreviewPhotoIndex.value = (_selectedPreviewPhotoIndex.value + 1) % count
+        val photos = previewPhotos.value
+        if (photos.isNotEmpty()) {
+            val nextIdx = (_selectedPreviewPhotoIndex.value + 1) % photos.size
+            _selectedPreviewPhotoIndex.value = nextIdx
+            onPhotoSelectedByUser(photos[nextIdx])
         }
     }
 
     fun previousPreviewPhoto() {
-        val count = previewPhotos.value.size
-        if (count > 0) {
-            _selectedPreviewPhotoIndex.value = (_selectedPreviewPhotoIndex.value - 1 + count) % count
+        val photos = previewPhotos.value
+        if (photos.isNotEmpty()) {
+            val prevIdx = (_selectedPreviewPhotoIndex.value - 1 + photos.size) % photos.size
+            _selectedPreviewPhotoIndex.value = prevIdx
+            onPhotoSelectedByUser(photos[prevIdx])
+        }
+    }
+
+    private fun onPhotoSelectedByUser(photo: PhotoItem) {
+        val active = activeWallpaperPhoto.value
+        if (active != null && (photo.id == active.id || photo.uri == active.uri)) {
+            // User navigated back to the currently active wallpaper
+            _userSelectedPhoto.value = null
+            pendingWallpaperPhoto = null
+            updateWallpaperDebounceJob?.cancel()
+            updateWallpaperDebounceJob = null
+            return
+        }
+
+        _userSelectedPhoto.value = photo
+        pendingWallpaperPhoto = photo
+
+        // Debounce: update the wallpaper sooner (after 1.5s) if user pauses on this photo
+        updateWallpaperDebounceJob?.cancel()
+        updateWallpaperDebounceJob = viewModelScope.launch {
+            delay(WALLPAPER_UPDATE_DEBOUNCE_MILLIS)
+            applyPendingWallpaper()
+        }
+    }
+
+    fun applyPendingWallpaper() {
+        val photoToApply = pendingWallpaperPhoto ?: return
+        updateWallpaperDebounceJob?.cancel()
+        updateWallpaperDebounceJob = null
+        pendingWallpaperPhoto = null
+
+        viewModelScope.launch {
+            val result = wallpaperRepository.setPhotoAsWallpaper(photoToApply)
+            if (result.isSuccess) {
+                _userSelectedPhoto.value = null
+                _eventFlow.emit(UiEvent.ShowSnackbar("Wallpaper updated to selected photo!"))
+            }
+        }
+    }
+
+    fun flushPendingWallpaperUpdate() {
+        applyPendingWallpaper()
+    }
+
+    fun onAppBackgrounded() {
+        updateWallpaperDebounceJob?.cancel()
+        updateWallpaperDebounceJob = null
+
+        val photoToApply = pendingWallpaperPhoto ?: run {
+            val current = currentPreviewPhoto.value
+            val active = activeWallpaperPhoto.value
+            if (current != null && (active == null || (current.id != active.id && current.uri != active.uri))) {
+                current
+            } else {
+                null
+            }
+        }
+
+        if (photoToApply != null) {
+            pendingWallpaperPhoto = null
+            _userSelectedPhoto.value = null
+            viewModelScope.launch {
+                wallpaperRepository.setPhotoAsWallpaper(photoToApply)
+            }
+        } else if (hasPendingCustomization) {
+            hasPendingCustomization = false
+            viewModelScope.launch {
+                wallpaperRepository.reapplyCurrentWallpaper()
+            }
         }
     }
 
@@ -133,6 +270,11 @@ class MainViewModel @Inject constructor(
     }
 
     fun setPhotoAsWallpaper(photo: PhotoItem) {
+        updateWallpaperDebounceJob?.cancel()
+        updateWallpaperDebounceJob = null
+        pendingWallpaperPhoto = null
+        _userSelectedPhoto.value = null
+
         viewModelScope.launch {
             val isLive = wallpaperRepository.isLiveWallpaperActive()
             val result = wallpaperRepository.setPhotoAsWallpaper(photo)
@@ -150,15 +292,28 @@ class MainViewModel @Inject constructor(
     }
 
     fun openAlbumInPreview(albumId: String, photoId: String? = null) {
-        if (photoId != null) {
-            val idx = previewPhotos.value.indexOfFirst { it.id == photoId }
-            if (idx >= 0) {
-                _selectedPreviewPhotoIndex.value = idx
+        viewModelScope.launch {
+            val photos = previewPhotos.value
+            val existing = if (photoId != null) {
+                photos.firstOrNull { it.id == photoId }
+            } else {
+                photos.firstOrNull { it.albumId == albumId }
             }
-        } else {
-            val idx = previewPhotos.value.indexOfFirst { it.albumId == albumId }
-            if (idx >= 0) {
-                _selectedPreviewPhotoIndex.value = idx
+
+            val targetPhoto = existing ?: if (photoId != null) {
+                albumRepository.getPhotosInAlbum(albumId).first().firstOrNull { it.id == photoId }
+            } else {
+                albumRepository.getPhotosInAlbum(albumId).first().firstOrNull()
+            }
+
+            if (targetPhoto != null) {
+                _userSelectedPhoto.value = targetPhoto
+                val updatedPhotos = previewPhotos.value
+                val idx = updatedPhotos.indexOfFirst { it.id == targetPhoto.id }
+                if (idx >= 0) {
+                    _selectedPreviewPhotoIndex.value = idx
+                }
+                onPhotoSelectedByUser(targetPhoto)
             }
         }
     }
@@ -183,6 +338,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun updatePhotoCustomization(photoId: String, cropX: Float?, cropY: Float?, zoom: Float?) {
+        hasPendingCustomization = true
         viewModelScope.launch {
             wallpaperRepository.updatePhotoCustomization(photoId, cropX, cropY, zoom)
         }

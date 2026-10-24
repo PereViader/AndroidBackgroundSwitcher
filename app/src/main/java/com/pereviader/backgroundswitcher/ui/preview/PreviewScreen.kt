@@ -92,6 +92,7 @@ fun PreviewScreen(
     photos: List<PhotoItem>,
     currentIndex: Int,
     currentPhoto: PhotoItem?,
+    activeWallpaperPhotoId: String? = null,
     onSelectPhotoIndex: (Int) -> Unit,
     onPreviousPhoto: () -> Unit,
     onNextPhoto: () -> Unit,
@@ -111,6 +112,7 @@ fun PreviewScreen(
     }
 
     var showActionModal by remember { mutableStateOf(false) }
+    val isActiveWallpaper = currentPhoto != null && (currentPhoto.id == activeWallpaperPhotoId)
 
     Column(
         modifier = modifier
@@ -244,17 +246,43 @@ fun PreviewScreen(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                FilledTonalButton(
-                    onClick = { onSetAsWallpaper(currentPhoto) },
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Wallpaper,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Set as Wallpaper", style = MaterialTheme.typography.labelMedium)
+                if (isActiveWallpaper) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Active Wallpaper",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                } else {
+                    FilledTonalButton(
+                        onClick = { onSetAsWallpaper(currentPhoto) },
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Wallpaper,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Set as Wallpaper", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
@@ -263,6 +291,7 @@ fun PreviewScreen(
         BottomBrowsingControls(
             photos = photos,
             currentIndex = currentIndex,
+            activeWallpaperPhotoId = activeWallpaperPhotoId,
             onSelectPhotoIndex = onSelectPhotoIndex
         )
     }
@@ -295,7 +324,7 @@ fun PreviewScreen(
                             contentDescription = null
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Set as Wallpaper")
+                        Text(if (isActiveWallpaper) "Reapply as Wallpaper" else "Set as Wallpaper")
                     }
 
                     FilledTonalButton(
@@ -340,6 +369,7 @@ fun PreviewScreen(
 private fun BottomBrowsingControls(
     photos: List<PhotoItem>,
     currentIndex: Int,
+    activeWallpaperPhotoId: String? = null,
     onSelectPhotoIndex: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -411,6 +441,25 @@ private fun BottomBrowsingControls(
                                 }
                             }
                     )
+
+                    val isCurrentWallpaper = photo.id == activeWallpaperPhotoId
+                    if (isCurrentWallpaper) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(3.dp)
+                                .background(MaterialTheme.colorScheme.primary, shape = CircleShape)
+                                .size(14.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Wallpaper,
+                                contentDescription = "Active Wallpaper",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(9.dp)
+                            )
+                        }
+                    }
 
                     if (!photo.isEnabled) {
                         Box(
