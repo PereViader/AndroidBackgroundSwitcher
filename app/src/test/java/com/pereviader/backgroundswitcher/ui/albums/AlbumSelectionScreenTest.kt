@@ -99,4 +99,35 @@ class AlbumSelectionScreenTest {
         // Because p1 was untoggled, not all photos are selected, so "Select All" is displayed again
         composeTestRule.onNodeWithText("Select All").assertIsDisplayed()
     }
+
+    @Test
+    fun `renders Google Drive badge and sync action for GOOGLE_DRIVE_FOLDER album card`() {
+        val driveAlbum = Album(
+            id = "gd_folder1",
+            name = "Drive Landscapes",
+            coverUri = "https://lh3.googleusercontent.com/d/f1=w800",
+            photoCount = 5,
+            source = AlbumSource.GOOGLE_DRIVE_FOLDER,
+            isSelected = true,
+            selectedPhotoCount = 5,
+            sourceUrl = "https://drive.google.com/drive/folders/folder1"
+        )
+        var syncedAlbumId: String? = null
+
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = listOf(driveAlbum),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = {},
+                onImportGooglePhotosUrl = {},
+                onSyncGooglePhotosAlbum = { id -> syncedAlbumId = id },
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { MutableStateFlow(emptyList()) }
+            )
+        }
+
+        composeTestRule.onNodeWithText("Drive Landscapes").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Google Drive").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("album_source_badge_gd_folder1", useUnmergedTree = true).assertIsDisplayed()
+    }
 }

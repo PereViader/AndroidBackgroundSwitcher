@@ -160,4 +160,30 @@ class ShareReceiverActivityTest {
             ImportState.Error("No valid Google Photos link was found in the shared text.")
         )
     }
+
+    @Test
+    fun `processIntent extracts Google Drive folder link and imports via addGoogleDriveFolder`() = runTest {
+        val expectedDriveUrl = "https://drive.google.com/drive/folders/1SharedDriveFolder_ABC?usp=sharing"
+        val importedAlbum = Album(
+            id = "gd_1SharedDriveFolder_ABC",
+            name = "Drive Wallpapers",
+            coverUri = null,
+            photoCount = 15,
+            source = AlbumSource.GOOGLE_DRIVE_FOLDER,
+            sourceUrl = expectedDriveUrl
+        )
+        coEvery { albumRepository.addGoogleDriveFolder(expectedDriveUrl) } returns Result.success(importedAlbum)
+
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "Here is my Google Drive wallpaper folder:\n$expectedDriveUrl")
+        }
+
+        val states = mutableListOf<ImportState>()
+        activity.processIntent(intent) { states.add(it) }
+
+        coVerify(exactly = 1) { albumRepository.addGoogleDriveFolder(expectedDriveUrl) }
+        coVerify(exactly = 0) { albumRepository.importGooglePhotosAlbum(any()) }
+        assertThat(states).contains(ImportState.Success("Drive Wallpapers", 15))
+    }
 }

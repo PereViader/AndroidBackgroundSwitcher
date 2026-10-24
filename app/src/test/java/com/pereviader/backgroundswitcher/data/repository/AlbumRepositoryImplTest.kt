@@ -11,9 +11,11 @@ import com.pereviader.backgroundswitcher.data.local.db.entity.AlbumEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperCustomizationEntity
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreAlbumScanner
+import com.pereviader.backgroundswitcher.data.remote.GoogleDriveFolderParser
 import com.pereviader.backgroundswitcher.data.remote.GooglePhotosShareParser
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -27,6 +29,7 @@ class AlbumRepositoryImplTest {
     private lateinit var wallpaperCustomizationDao: WallpaperCustomizationDao
     private lateinit var mediaStoreScanner: MediaStoreAlbumScanner
     private lateinit var googlePhotosParser: GooglePhotosShareParser
+    private lateinit var googleDriveParser: GoogleDriveFolderParser
     private lateinit var repository: AlbumRepositoryImpl
 
     @Before
@@ -36,13 +39,17 @@ class AlbumRepositoryImplTest {
         wallpaperCustomizationDao = mockk(relaxed = true)
         mediaStoreScanner = mockk(relaxed = true)
         googlePhotosParser = mockk(relaxed = true)
+        googleDriveParser = mockk(relaxed = true)
+        every { googleDriveParser.isValidGoogleDriveFolderUrl(any()) } returns false
+        coEvery { wallpaperCustomizationDao.getCustomization(any()) } returns null
 
         repository = AlbumRepositoryImpl(
             albumDao = albumDao,
             photoDao = photoDao,
             wallpaperCustomizationDao = wallpaperCustomizationDao,
             mediaStoreScanner = mediaStoreScanner,
-            googlePhotosParser = googlePhotosParser
+            googlePhotosParser = googlePhotosParser,
+            googleDriveParser = googleDriveParser
         )
     }
 
@@ -290,5 +297,141 @@ class AlbumRepositoryImplTest {
             assertThat(photos[1].id).isEqualTo("p2")
             assertThat(photos[1].isSelected).isFalse()
         }
+    }
+
+    @Test
+    fun `addGoogleDriveFolder parses, saves with GOOGLE_DRIVE_FOLDER source and sourceUrl, and inserts photos`() = runTest {
+        val driveUrl = "https://drive.google.com/drive/folders/1DriveWallpapers"
+        val album = Album(
+            id = "gd_1DriveWallpapers",
+            name = "Drive Wallpapers",
+            coverUri = "https://lh3.googleusercontent.com/d/f1=w800",
+            photoCount = 2,
+            source = AlbumSource.GOOGLE_DRIVE_FOLDER,
+            isSelected = true,
+            sourceUrl = driveUrl
+        )
+        val photos = listOf(
+            PhotoItem(
+                id = "gd_1DriveWallpapers_f1",
+                albumId = "gd_1DriveWallpapers",
+                uri = "https://lh3.googleusercontent.com/d/f1=w2048",
+                width = 2048,
+                height = 1152
+            ),
+            PhotoItem(
+                id = "gd_1DriveWallpapers_f2",
+                albumId = "gd_1DriveWallpapers",
+                uri = "https://lh3.googleusercontent.com/d/f2=w2048",
+                width = 2048,
+                height = 1152
+            )
+        )
+
+        coEvery { googleDriveParser.parseFolderUrl(driveUrl) } returns Result.success(
+            GoogleDriveFolderParser.ParsedDriveFolder(album, photos)
+        )
+        coEvery { photoDao.getPhotosListByAlbum("gd_1DriveWallpapers") } returns emptyList()
+
+        val result = repository.addGoogleDriveFolder(driveUrl)
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.name).isEqualTo("Drive Wallpapers")
+        assertThat(result.getOrNull()?.source).isEqualTo(AlbumSource.GOOGLE_DRIVE_FOLDER)
+        assertThat(result.getOrNull()?.sourceUrl).isEqualTo(driveUrl)
+
+        coVerify {
+            albumDao.insertOrUpdate(
+                match {
+                    it.id == "gd_1DriveWallpapers" &&
+                        it.source == AlbumSource.GOOGLE_DRIVE_FOLDER.name &&
+                        it.sourceUrl == driveUrl
+                }
+            )
+        }
+        coVerify { photoDao.insertOrUpdateAll(match { it.size == 2 }) }
+        coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
+    }
+
+    @Test
+    fun `syncCloudAlbums syncs GOOGLE_DRIVE_FOLDER and preserves customizations and selection`() = runTest {
+        val albumId = "gd_1DriveFolder"
+        val savedUrl = "https://drive.google.com/drive/folders/1DriveFolder"
+        val existingAlbumEntity = AlbumEntity(
+            id = albumId,
+            name = "Drive Album",
+            coverUri = "https://lh3.googleusercontent.com/d/f1=w800",
+            photoCount = 2,
+            source = AlbumSource.GOOGLE_DRIVE_FOLDER.name,
+            isSelected = true,
+            lastSyncedAt = 100L,
+            sourceUrl = savedUrl
+        )
+
+        coEvery { albumDao.getSelectedAlbums() } returns flowOf(listOf(existingAlbumEntity))
+        coEvery { albumDao.getAllAlbums() } returns flowOf(listOf(existingAlbumEntity))
+        coEvery { albumDao.getAlbumById(albumId) } returns existingAlbumEntity
+
+        val existingPhotos = listOf(
+            PhotoEntity(
+                id = "gd_1DriveFolder_f1",
+                albumId = albumId,
+                uri = "https://lh3.googleusercontent.com/d/f1=w2048",
+                isSelected = false,
+                lastDisplayedAt = 500L
+            ),
+            PhotoEntity(
+                id = "gd_1DriveFolder_f2_deleted",
+                albumId = albumId,
+                uri = "https://lh3.googleusercontent.com/d/f2_deleted=w2048",
+                isSelected = true
+            )
+        )
+        coEvery { photoDao.getPhotosListByAlbum(albumId) } returns existingPhotos
+        coEvery { wallpaperCustomizationDao.getCustomization("https://lh3.googleusercontent.com/d/f1=w2048") } returns WallpaperCustomizationEntity(
+            imageUri = "https://lh3.googleusercontent.com/d/f1=w2048",
+            cropX = 0.3f,
+            cropY = 0.7f,
+            zoom = 1.4f,
+            isSelected = false
+        )
+
+        // Synced folder now has f1 and f3 (f2_deleted was removed, f3 was added)
+        val refreshedAlbum = Album(
+            id = albumId,
+            name = "Drive Album Updated",
+            coverUri = "https://lh3.googleusercontent.com/d/f1=w800",
+            photoCount = 2,
+            source = AlbumSource.GOOGLE_DRIVE_FOLDER,
+            isSelected = true,
+            sourceUrl = savedUrl
+        )
+        val syncedPhotos = listOf(
+            PhotoItem(id = "gd_1DriveFolder_f1", albumId = albumId, uri = "https://lh3.googleusercontent.com/d/f1=w2048"),
+            PhotoItem(id = "gd_1DriveFolder_f3", albumId = albumId, uri = "https://lh3.googleusercontent.com/d/f3=w2048")
+        )
+        coEvery { googleDriveParser.parseFolderUrl(savedUrl) } returns Result.success(
+            GoogleDriveFolderParser.ParsedDriveFolder(refreshedAlbum, syncedPhotos)
+        )
+
+        repository.syncCloudAlbums()
+
+        coVerify { photoDao.deletePhotosByAlbum(albumId) }
+        coVerify {
+            photoDao.insertOrUpdateAll(
+                match { list ->
+                    val f1 = list.first { it.id == "gd_1DriveFolder_f1" }
+                    val f3 = list.first { it.id == "gd_1DriveFolder_f3" }
+                    list.size == 2 &&
+                        f1.cropX == 0.3f &&
+                        f1.cropY == 0.7f &&
+                        f1.zoom == 1.4f &&
+                        !f1.isSelected &&
+                        f1.lastDisplayedAt == 500L &&
+                        f3.isSelected
+                }
+            )
+        }
+        coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
     }
 }

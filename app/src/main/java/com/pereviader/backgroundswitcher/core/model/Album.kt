@@ -3,7 +3,8 @@ package com.pereviader.backgroundswitcher.core.model
 enum class AlbumSource {
     LOCAL_MEDIASTORE,
     GOOGLE_PHOTOS_SHARE,
-    GOOGLE_PHOTOS_PICKER
+    GOOGLE_PHOTOS_PICKER,
+    GOOGLE_DRIVE_FOLDER
 }
 
 data class Album(

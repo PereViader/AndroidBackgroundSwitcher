@@ -434,10 +434,38 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun addGoogleDriveFolder(url: String) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val result = albumRepository.addGoogleDriveFolder(url)
+            _isRefreshing.value = false
+            if (result.isSuccess) {
+                val album = result.getOrNull()
+                _eventFlow.emit(UiEvent.ShowSnackbar("Imported '${album?.name}' (${album?.photoCount} photos)"))
+            } else {
+                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to import: ${result.exceptionOrNull()?.message}"))
+            }
+        }
+    }
+
     fun syncGooglePhotosAlbum(albumId: String) {
         viewModelScope.launch {
             _isRefreshing.value = true
             val result = albumRepository.syncGooglePhotosAlbum(albumId)
+            _isRefreshing.value = false
+            if (result.isSuccess) {
+                val album = result.getOrNull()
+                _eventFlow.emit(UiEvent.ShowSnackbar("Synced '${album?.name}' (${album?.photoCount} photos)"))
+            } else {
+                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to sync: ${result.exceptionOrNull()?.message}"))
+            }
+        }
+    }
+
+    fun syncGoogleDriveFolder(albumId: String) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val result = albumRepository.syncGoogleDriveFolder(albumId)
             _isRefreshing.value = false
             if (result.isSuccess) {
                 val album = result.getOrNull()

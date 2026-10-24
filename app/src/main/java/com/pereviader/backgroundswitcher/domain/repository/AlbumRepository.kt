@@ -11,6 +11,11 @@ interface AlbumRepository {
     suspend fun toggleAlbumSelection(albumId: String, isSelected: Boolean)
     suspend fun importGooglePhotosAlbum(url: String): Result<Album>
     suspend fun syncGooglePhotosAlbum(albumId: String): Result<Album>
+    suspend fun addGoogleDriveFolder(shareUrl: String): Result<Album>
+    suspend fun importGoogleDriveFolder(url: String): Result<Album> = addGoogleDriveFolder(url)
+    suspend fun syncGoogleDriveFolder(albumId: String): Result<Album>
+    suspend fun syncAlbum(albumId: String): Result<Album> = syncGooglePhotosAlbum(albumId)
+    suspend fun syncCloudAlbums()
     suspend fun syncAllSelectedAlbums()
     fun getPhotosInAlbum(albumId: String): Flow<List<PhotoItem>>
     fun getPhotosFromSelectedAlbums(): Flow<List<PhotoItem>>

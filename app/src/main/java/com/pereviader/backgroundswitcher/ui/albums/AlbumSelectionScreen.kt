@@ -222,6 +222,13 @@ private fun AlbumCard(
     onDelete: () -> Unit
 ) {
     val isGooglePhotos = album.source == AlbumSource.GOOGLE_PHOTOS_SHARE
+    val isGoogleDrive = album.source == AlbumSource.GOOGLE_DRIVE_FOLDER
+    val isCloudAlbum = isGooglePhotos || isGoogleDrive
+    val sourceBadgeLabel = when (album.source) {
+        AlbumSource.GOOGLE_DRIVE_FOLDER -> "Google Drive"
+        AlbumSource.GOOGLE_PHOTOS_SHARE -> "Cloud"
+        else -> "Local"
+    }
 
     Card(
         modifier = Modifier
@@ -280,20 +287,21 @@ private fun AlbumCard(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(6.dp)
+                        .testTag("album_source_badge_${album.id}")
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Icon(
-                            imageVector = if (isGooglePhotos) Icons.Default.Cloud else Icons.Default.Folder,
+                            imageVector = if (isCloudAlbum) Icons.Default.Cloud else Icons.Default.Folder,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = if (isGooglePhotos) "Cloud" else "Local",
+                            text = sourceBadgeLabel,
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
@@ -324,7 +332,7 @@ private fun AlbumCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                if (isGooglePhotos) {
+                if (isCloudAlbum) {
                     Row {
                         IconButton(
                             onClick = onSync,
@@ -369,6 +377,13 @@ private fun AlbumPhotosDialog(
 ) {
     val photos by photosFlow.collectAsState(initial = emptyList())
     val isGooglePhotos = album.source == AlbumSource.GOOGLE_PHOTOS_SHARE
+    val isGoogleDrive = album.source == AlbumSource.GOOGLE_DRIVE_FOLDER
+    val isCloudAlbum = isGooglePhotos || isGoogleDrive
+    val sourceLabel = when (album.source) {
+        AlbumSource.GOOGLE_PHOTOS_SHARE -> "Google Photos"
+        AlbumSource.GOOGLE_DRIVE_FOLDER -> "Google Drive"
+        else -> "Device Album"
+    }
     val selectedCount = photos.count { it.isSelected }
     val allSelected = photos.isNotEmpty() && selectedCount == photos.size
 
@@ -389,9 +404,12 @@ private fun AlbumPhotosDialog(
                         overflow = TextOverflow.Ellipsis
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isGooglePhotos) {
+                        if (isCloudAlbum) {
                             IconButton(onClick = onSync) {
-                                Icon(Icons.Default.Sync, contentDescription = "Sync from Google Photos")
+                                Icon(
+                                    Icons.Default.Sync,
+                                    contentDescription = if (isGoogleDrive) "Sync from Google Drive" else "Sync from Google Photos"
+                                )
                             }
                         }
                     }
@@ -402,7 +420,7 @@ private fun AlbumPhotosDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "$selectedCount / ${photos.size} selected • ${if (isGooglePhotos) "Google Photos" else "Device Album"}",
+                        text = "$selectedCount / ${photos.size} selected • $sourceLabel",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -509,7 +527,7 @@ private fun AlbumPhotosDialog(
             }
         },
         dismissButton = {
-            if (isGooglePhotos) {
+            if (isCloudAlbum) {
                 OutlinedButton(onClick = onDelete) {
                     Icon(
                         Icons.Default.Delete,
@@ -534,11 +552,11 @@ private fun ImportGooglePhotosDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Import Google Photos Album") },
+        title = { Text("Import Cloud Album") },
         text = {
             Column {
                 Text(
-                    text = "Tip: In the Google Photos app, tap Share on any album and choose 'Background Switcher', or paste its shared link below:",
+                    text = "Tip: In Google Photos or Google Drive, tap Share on any album or folder and choose 'Background Switcher', or paste its shared link below:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -546,8 +564,8 @@ private fun ImportGooglePhotosDialog(
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
-                    label = { Text("Album Shared Link") },
-                    placeholder = { Text("https://photos.app.goo.gl/...") },
+                    label = { Text("Album or Folder Shared Link") },
+                    placeholder = { Text("https://photos.app.goo.gl/... or https://drive.google.com/drive/folders/...") },
                     trailingIcon = {
                         IconButton(onClick = {
                             clipboardManager.getText()?.text?.let { clipText ->

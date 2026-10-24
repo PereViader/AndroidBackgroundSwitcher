@@ -9,13 +9,16 @@ import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizatio
 import com.pereviader.backgroundswitcher.data.local.db.entity.AlbumEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreAlbumScanner
+import com.pereviader.backgroundswitcher.data.remote.GoogleDriveFolderParser
 import com.pereviader.backgroundswitcher.data.remote.GooglePhotosShareParser
 import com.pereviader.backgroundswitcher.domain.repository.AlbumRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import okhttp3.OkHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,8 +28,24 @@ class AlbumRepositoryImpl @Inject constructor(
     private val photoDao: PhotoDao,
     private val wallpaperCustomizationDao: WallpaperCustomizationDao,
     private val mediaStoreScanner: MediaStoreAlbumScanner,
-    private val googlePhotosParser: GooglePhotosShareParser
+    private val googlePhotosParser: GooglePhotosShareParser,
+    private val googleDriveParser: GoogleDriveFolderParser
 ) : AlbumRepository {
+
+    constructor(
+        albumDao: AlbumDao,
+        photoDao: PhotoDao,
+        wallpaperCustomizationDao: WallpaperCustomizationDao,
+        mediaStoreScanner: MediaStoreAlbumScanner,
+        googlePhotosParser: GooglePhotosShareParser
+    ) : this(
+        albumDao = albumDao,
+        photoDao = photoDao,
+        wallpaperCustomizationDao = wallpaperCustomizationDao,
+        mediaStoreScanner = mediaStoreScanner,
+        googlePhotosParser = googlePhotosParser,
+        googleDriveParser = GoogleDriveFolderParser(OkHttpClient())
+    )
 
     override fun getAlbums(): Flow<List<Album>> {
         return combine(
@@ -147,6 +166,9 @@ class AlbumRepositoryImpl @Inject constructor(
     }
 
     override suspend fun importGooglePhotosAlbum(url: String): Result<Album> {
+        if (googleDriveParser.isValidGoogleDriveFolderUrl(url)) {
+            return addGoogleDriveFolder(url)
+        }
         val parseResult = googlePhotosParser.parseAlbumUrl(url)
         return parseResult.map { parsed ->
             val albumEntity = parsed.album.toEntity().copy(isSelected = true)
@@ -173,6 +195,9 @@ class AlbumRepositoryImpl @Inject constructor(
     override suspend fun syncGooglePhotosAlbum(albumId: String): Result<Album> {
         val album = albumDao.getAlbumById(albumId)
             ?: return Result.failure(IllegalStateException("Album not found"))
+        if (album.source == AlbumSource.GOOGLE_DRIVE_FOLDER.name) {
+            return syncGoogleDriveFolder(albumId)
+        }
         val url = album.sourceUrl
             ?: return Result.failure(IllegalStateException("Album has no remote Google Photos URL saved"))
 
@@ -202,6 +227,88 @@ class AlbumRepositoryImpl @Inject constructor(
             wallpaperCustomizationDao.deleteOrphanedCustomizations()
             updatedEntity.toDomain(selectedPhotoCount = photosToSave.count { it.isSelected })
         }
+    }
+
+    override suspend fun addGoogleDriveFolder(shareUrl: String): Result<Album> {
+        val parseResult = googleDriveParser.parseFolderUrl(shareUrl)
+        return parseResult.map { parsed ->
+            val existingPhotos = photoDao.getPhotosListByAlbum(parsed.album.id).associateBy { it.uri }
+            val photosToSave = parsed.photos.map { photo ->
+                val existing = existingPhotos[photo.uri]
+                val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
+                photo.toEntity().copy(
+                    cropX = customization?.cropX ?: existing?.cropX,
+                    cropY = customization?.cropY ?: existing?.cropY,
+                    zoom = customization?.zoom ?: existing?.zoom,
+                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
+                    isSelected = customization?.isSelected ?: existing?.isSelected ?: true
+                )
+            }
+            val selectedCount = photosToSave.count { it.isSelected }
+            val albumEntity = parsed.album.toEntity().copy(isSelected = selectedCount > 0)
+            albumDao.insertOrUpdate(albumEntity)
+            photoDao.deletePhotosByAlbum(parsed.album.id)
+            photoDao.insertOrUpdateAll(photosToSave)
+            wallpaperCustomizationDao.deleteOrphanedCustomizations()
+            parsed.album.copy(
+                isSelected = selectedCount > 0,
+                selectedPhotoCount = selectedCount
+            )
+        }
+    }
+
+    override suspend fun syncGoogleDriveFolder(albumId: String): Result<Album> {
+        val album = albumDao.getAlbumById(albumId)
+            ?: return Result.failure(IllegalStateException("Album not found"))
+        val url = album.sourceUrl
+            ?: return Result.failure(IllegalStateException("Album has no remote Google Drive folder URL saved"))
+
+        val parseResult = googleDriveParser.parseFolderUrl(url)
+        return parseResult.map { parsed ->
+            val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.uri }
+            val photosToSave = parsed.photos.map { photo ->
+                val existing = existingPhotos[photo.uri]
+                val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
+                photo.toEntity().copy(
+                    cropX = customization?.cropX ?: existing?.cropX,
+                    cropY = customization?.cropY ?: existing?.cropY,
+                    zoom = customization?.zoom ?: existing?.zoom,
+                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
+                    isSelected = customization?.isSelected ?: existing?.isSelected ?: album.isSelected
+                )
+            }
+            val updatedEntity = album.copy(
+                name = parsed.album.name,
+                coverUri = parsed.album.coverUri,
+                photoCount = parsed.photos.size,
+                lastSyncedAt = System.currentTimeMillis()
+            )
+            albumDao.insertOrUpdate(updatedEntity)
+            photoDao.deletePhotosByAlbum(albumId)
+            photoDao.insertOrUpdateAll(photosToSave)
+            wallpaperCustomizationDao.deleteOrphanedCustomizations()
+            updatedEntity.toDomain(selectedPhotoCount = photosToSave.count { it.isSelected })
+        }
+    }
+
+    override suspend fun syncCloudAlbums() {
+        val selectedAlbums = albumDao.getSelectedAlbums().firstOrNull().orEmpty()
+        val allAlbums = albumDao.getAllAlbums().firstOrNull().orEmpty()
+        val cloudAlbums = (selectedAlbums + allAlbums)
+            .distinctBy { it.id }
+            .filter {
+                it.source == AlbumSource.GOOGLE_PHOTOS_SHARE.name ||
+                    it.source == AlbumSource.GOOGLE_DRIVE_FOLDER.name
+            }
+
+        for (album in cloudAlbums) {
+            if (album.sourceUrl.isNullOrBlank()) continue
+            when (album.source) {
+                AlbumSource.GOOGLE_PHOTOS_SHARE.name -> syncGooglePhotosAlbum(album.id)
+                AlbumSource.GOOGLE_DRIVE_FOLDER.name -> syncGoogleDriveFolder(album.id)
+            }
+        }
+        wallpaperCustomizationDao.deleteOrphanedCustomizations()
     }
 
     override suspend fun syncAllSelectedAlbums() {
@@ -242,6 +349,11 @@ class AlbumRepositoryImpl @Inject constructor(
                 AlbumSource.GOOGLE_PHOTOS_SHARE.name -> {
                     if (!album.sourceUrl.isNullOrBlank()) {
                         syncGooglePhotosAlbum(album.id)
+                    }
+                }
+                AlbumSource.GOOGLE_DRIVE_FOLDER.name -> {
+                    if (!album.sourceUrl.isNullOrBlank()) {
+                        syncGoogleDriveFolder(album.id)
                     }
                 }
             }

@@ -37,12 +37,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.pereviader.backgroundswitcher.data.remote.GoogleDriveFolderParser
 import com.pereviader.backgroundswitcher.data.remote.GooglePhotosShareParser
 import com.pereviader.backgroundswitcher.domain.repository.AlbumRepository
 import com.pereviader.backgroundswitcher.ui.MainActivity
 import com.pereviader.backgroundswitcher.ui.theme.BackgroundSwitcherTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
+import okhttp3.OkHttpClient
 import javax.inject.Inject
 
 sealed class ImportState {
@@ -59,6 +61,13 @@ class ShareReceiverActivity : ComponentActivity() {
 
     @Inject
     lateinit var googlePhotosParser: GooglePhotosShareParser
+
+    @Inject
+    lateinit var googleDriveParser: GoogleDriveFolderParser
+
+    private val activeDriveParser: GoogleDriveFolderParser by lazy {
+        if (::googleDriveParser.isInitialized) googleDriveParser else GoogleDriveFolderParser(OkHttpClient())
+    }
 
     private var currentIntentState by mutableStateOf<Intent?>(null)
 
@@ -113,8 +122,31 @@ class ShareReceiverActivity : ComponentActivity() {
             return
         }
 
-        // 1. Always check for an extractable Google Photos / web album URL first,
-        // regardless of MIME type (Google Photos may set text/*, */*, or image/* when attaching a link preview).
+        // 1. Always check for an extractable Google Drive folder or Google Photos / web album URL first,
+        // regardless of MIME type (Google Photos/Drive may set text/*, */*, or image/* when attaching a link preview).
+        val driveFolderUrl = extractSharedDriveFolderUrl(intent)
+        if (driveFolderUrl != null) {
+            val result = albumRepository.addGoogleDriveFolder(driveFolderUrl)
+            if (result.isSuccess) {
+                val album = result.getOrNull()
+                onStateChange(
+                    ImportState.Success(
+                        albumName = album?.name ?: "Google Drive Folder",
+                        photoCount = album?.photoCount ?: 0
+                    )
+                )
+                delay(1200)
+                openMainActivity()
+                finish()
+            } else {
+                val error = result.exceptionOrNull()?.localizedMessage
+                    ?: result.exceptionOrNull()?.message
+                    ?: "Failed to parse Google Drive folder."
+                onStateChange(ImportState.Error(error))
+            }
+            return
+        }
+
         val albumUrl = extractSharedAlbumUrl(intent)
         if (albumUrl != null) {
             val result = albumRepository.importGooglePhotosAlbum(albumUrl)
@@ -182,6 +214,17 @@ class ShareReceiverActivity : ComponentActivity() {
                 onStateChange(ImportState.Error("Unsupported content shared."))
             }
         }
+    }
+
+    internal fun extractSharedDriveFolderUrl(intent: Intent): String? {
+        val candidates = extractSharedTextCandidates(intent)
+        for (candidate in candidates) {
+            val driveUrl = activeDriveParser.extractGoogleDriveFolderUrl(candidate)
+            if (driveUrl != null) {
+                return driveUrl
+            }
+        }
+        return null
     }
 
     internal fun extractSharedAlbumUrl(intent: Intent): String? {
@@ -341,7 +384,8 @@ class ShareReceiverActivity : ComponentActivity() {
             uriStr.startsWith("https://", ignoreCase = true) ||
             uriStr.contains("photos.app.goo.gl", ignoreCase = true) ||
             uriStr.contains("photos.google.com", ignoreCase = true) ||
-            uriStr.contains("goo.gl/photos", ignoreCase = true)
+            uriStr.contains("goo.gl/photos", ignoreCase = true) ||
+            uriStr.contains("drive.google.com", ignoreCase = true)
     }
 
     private fun openMainActivity() {
