@@ -17,8 +17,12 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -84,6 +88,15 @@ class MainViewModelTest {
         )
     }
 
+    private fun TestScope.subscribeAll(viewModel: MainViewModel) {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.albums.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.settings.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.activeWallpaperPhoto.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.previewPhotos.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.currentPreviewPhoto.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.selectedPreviewPhotoIndex.collect() }
+    }
+
     @Test
     fun `preview page displays the active wallpaper on launch`() = runTest(testDispatcher) {
         val photo1 = PhotoItem(id = "p1", albumId = "a1", uri = "content://media/1")
@@ -93,6 +106,7 @@ class MainViewModelTest {
         activePhotoFlow.value = photo2
 
         val viewModel = createViewModel()
+        subscribeAll(viewModel)
         advanceUntilIdle()
 
         // Preview photos should contain both photos
@@ -112,6 +126,7 @@ class MainViewModelTest {
         activePhotoFlow.value = photoActive
 
         val viewModel = createViewModel()
+        subscribeAll(viewModel)
         advanceUntilIdle()
 
         // Active wallpaper must be included in previewPhotos
@@ -131,6 +146,7 @@ class MainViewModelTest {
         activePhotoFlow.value = photo1
 
         val viewModel = createViewModel()
+        subscribeAll(viewModel)
         advanceUntilIdle()
 
         assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(0)
@@ -162,6 +178,7 @@ class MainViewModelTest {
         activePhotoFlow.value = photo1
 
         val viewModel = createViewModel()
+        subscribeAll(viewModel)
         advanceUntilIdle()
 
         // User chooses photo2
@@ -187,6 +204,7 @@ class MainViewModelTest {
         activePhotoFlow.value = photo1
 
         val viewModel = createViewModel()
+        subscribeAll(viewModel)
         advanceUntilIdle()
 
         viewModel.selectPreviewPhotoIndex(1)
@@ -208,6 +226,7 @@ class MainViewModelTest {
         activePhotoFlow.value = photo1
 
         val viewModel = createViewModel()
+        subscribeAll(viewModel)
         advanceUntilIdle()
 
         assertThat(viewModel.currentPreviewPhoto.value?.id).isEqualTo("p1")
@@ -228,6 +247,7 @@ class MainViewModelTest {
         activePhotoFlow.value = photo1
 
         val viewModel = createViewModel()
+        subscribeAll(viewModel)
         advanceUntilIdle()
 
         viewModel.updatePhotoCustomization("p1", 0.4f, 0.6f, 1.5f)
@@ -236,5 +256,64 @@ class MainViewModelTest {
 
         coVerify(atLeast = 1) { wallpaperRepository.updatePhotoCustomization("p1", 0.4f, 0.6f, 1.5f) }
         coVerify(atLeast = 1) { wallpaperRepository.reapplyCurrentWallpaper() }
+    }
+
+    @Test
+    fun `togglePhotoEnabled delegates to wallpaperRepository`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        viewModel.togglePhotoEnabled("p1", false)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { wallpaperRepository.togglePhotoEnabled("p1", false) }
+    }
+
+    @Test
+    fun `toggleAlbum delegates to toggleAlbumSelectionUseCase`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        viewModel.toggleAlbum("album_123", true)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { toggleAlbumSelectionUseCase("album_123", true) }
+    }
+
+    @Test
+    fun `updateSettings delegates to updateWallpaperSettingsUseCase`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        val newSettings = WallpaperSettings(intervalMinutes = 30L)
+        viewModel.updateSettings(newSettings)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { updateWallpaperSettingsUseCase(newSettings) }
+    }
+
+    @Test
+    fun `navigation wraps around backwards and forwards in filmstrip`() = runTest(testDispatcher) {
+        val photo1 = PhotoItem(id = "p1", albumId = "a1", uri = "content://media/1")
+        val photo2 = PhotoItem(id = "p2", albumId = "a1", uri = "content://media/2")
+        selectedPhotosFlow.value = listOf(photo1, photo2)
+        activePhotoFlow.value = photo1
+
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(0)
+
+        // Previous from index 0 should wrap to index 1 (last)
+        viewModel.previousPreviewPhoto()
+        assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(1)
+
+        // Next from index 1 should wrap to index 0
+        viewModel.nextPreviewPhoto()
+        assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(0)
     }
 }
