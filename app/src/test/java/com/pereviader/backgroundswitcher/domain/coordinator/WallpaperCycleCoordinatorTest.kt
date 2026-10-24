@@ -261,6 +261,22 @@ class WallpaperCycleCoordinatorTest {
     }
 
     @Test
+    fun `external photo change overrides in-flight transition to a different photo`() {
+        coordinator.onTransitionStarted(samplePhoto1)
+
+        val decision = coordinator.evaluateTrigger(
+            WallpaperCycleCoordinator.CycleTrigger.ExternalPhotoChanged(samplePhoto2),
+            defaultSettings,
+            nowMillis = 1200L
+        )
+
+        assertThat(decision).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.TransitionTo::class.java)
+        val transition = decision as WallpaperCycleCoordinator.CycleDecision.TransitionTo
+        assertThat(transition.targetPhoto).isEqualTo(samplePhoto2)
+        assertThat(coordinator.targetPhoto).isEqualTo(samplePhoto2)
+    }
+
+    @Test
     fun `manual selection always triggers transition and updates targetPhoto`() {
         coordinator.onTransitionCompleted(samplePhoto1, nowMillis = 1000L)
 

@@ -268,4 +268,27 @@ class WallpaperRepositoryImplTest {
         assert(result?.id == "photo_oldest")
         coVerify { photoDao.getOldestPhoto() }
     }
+
+    @Test
+    fun `setPhotoAsWallpaper when live wallpaper is active marks photo displayed without setting static bitmap`() = runTest {
+        val photoEntity = PhotoEntity(
+            id = "photo_selected",
+            albumId = "album_1",
+            uri = "content://selected"
+        )
+        val photoItem = PhotoItem(
+            id = "photo_selected",
+            albumId = "album_1",
+            uri = "content://selected"
+        )
+        coEvery { photoDao.getPhotoById("photo_selected") } returns photoEntity
+        coEvery { wallpaperManagerHelper.isLiveWallpaperActive() } returns true
+
+        val result = repository.setPhotoAsWallpaper(photoItem)
+
+        assert(result.isSuccess)
+        coVerify { photoDao.updateLastDisplayed("photo_selected", any()) }
+        coVerify { preferencesManager.updateLastRotated(any(), "content://selected", "photo_selected") }
+        coVerify(exactly = 0) { wallpaperManagerHelper.setWallpaper(any(), any()) }
+    }
 }

@@ -2,9 +2,12 @@ package com.pereviader.backgroundswitcher.ui.preview
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import org.junit.Rule
 import org.junit.Test
@@ -115,5 +118,92 @@ class PreviewScreenTest {
 
         composeTestRule.onNodeWithContentDescription("Previous Photo").performClick()
         assert(prevClicked)
+    }
+
+    @Test
+    fun `clicking thumbnail in filmstrip invokes onSelectPhotoIndex`() {
+        var selectedIndex = -1
+
+        composeTestRule.setContent {
+            PreviewScreen(
+                photos = listOf(samplePhoto1, samplePhoto2),
+                currentIndex = 0,
+                currentPhoto = samplePhoto1,
+                activeWallpaperPhotoId = "p1",
+                isLiveWallpaperActive = true,
+                onSelectPhotoIndex = { selectedIndex = it },
+                onPreviousPhoto = {},
+                onNextPhoto = {},
+                onTogglePhotoEnabled = { _, _ -> },
+                onCustomizationChanged = { _, _, _, _ -> },
+                onSetAsWallpaper = {}
+            )
+        }
+
+        composeTestRule.onNodeWithTag("filmstrip_item_p2").performClick()
+        assert(selectedIndex == 1)
+    }
+
+    @Test
+    fun `long press opens Photo Options modal and clicking Set as Wallpaper invokes callback`() {
+        var selectedPhoto: PhotoItem? = null
+
+        composeTestRule.setContent {
+            PreviewScreen(
+                photos = listOf(samplePhoto1, samplePhoto2),
+                currentIndex = 1,
+                currentPhoto = samplePhoto2,
+                activeWallpaperPhotoId = "p1",
+                isLiveWallpaperActive = true,
+                onSelectPhotoIndex = {},
+                onPreviousPhoto = {},
+                onNextPhoto = {},
+                onTogglePhotoEnabled = { _, _ -> },
+                onCustomizationChanged = { _, _, _, _ -> },
+                onSetAsWallpaper = { selectedPhoto = it }
+            )
+        }
+
+        composeTestRule.onNodeWithTag("photo_preview").performTouchInput {
+            longClick()
+        }
+
+        composeTestRule.onNodeWithText("Photo Options").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Exclude from Rotation").assertIsDisplayed()
+
+        // Click "Set as Wallpaper" inside the modal (since there are two nodes with "Set as Wallpaper" — quick action bar and modal, pick the last/modal one or use onNodeWithText)
+        composeTestRule.onAllNodes(androidx.compose.ui.test.hasText("Set as Wallpaper"))[1].performClick()
+        assert(selectedPhoto?.id == "p2")
+    }
+
+    @Test
+    fun `long press on active wallpaper opens modal with Reapply as Wallpaper and clicking invokes callback`() {
+        var reappliedPhoto: PhotoItem? = null
+
+        composeTestRule.setContent {
+            PreviewScreen(
+                photos = listOf(samplePhoto1, samplePhoto2),
+                currentIndex = 0,
+                currentPhoto = samplePhoto1,
+                activeWallpaperPhotoId = "p1",
+                isLiveWallpaperActive = true,
+                onSelectPhotoIndex = {},
+                onPreviousPhoto = {},
+                onNextPhoto = {},
+                onTogglePhotoEnabled = { _, _ -> },
+                onCustomizationChanged = { _, _, _, _ -> },
+                onSetAsWallpaper = { reappliedPhoto = it }
+            )
+        }
+
+        composeTestRule.onNodeWithTag("photo_preview").performTouchInput {
+            longClick()
+        }
+
+        composeTestRule.onNodeWithText("Photo Options").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Reapply as Wallpaper").assertIsDisplayed()
+
+        composeTestRule.onNodeWithText("Reapply as Wallpaper").performClick()
+        assert(reappliedPhoto?.id == "p1")
     }
 }

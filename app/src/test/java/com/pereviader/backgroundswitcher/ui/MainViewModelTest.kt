@@ -316,4 +316,81 @@ class MainViewModelTest {
         viewModel.nextPreviewPhoto()
         assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(0)
     }
+
+    @Test
+    fun `setPhotoAsWallpaper immediately updates wallpaper, cancels debounce, and emits snackbar`() = runTest(testDispatcher) {
+        val photo1 = PhotoItem(id = "p1", albumId = "a1", uri = "content://media/1")
+        val photo2 = PhotoItem(id = "p2", albumId = "a1", uri = "content://media/2")
+        selectedPhotosFlow.value = listOf(photo1, photo2)
+        activePhotoFlow.value = photo1
+        coEvery { wallpaperRepository.isLiveWallpaperActive() } returns true
+
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        val emittedEvents = mutableListOf<UiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.eventFlow.collect { emittedEvents.add(it) }
+        }
+        advanceUntilIdle()
+
+        // Navigate to photo2 (starts debounce timer) then explicitly click "Set as Wallpaper"
+        viewModel.selectPreviewPhotoIndex(1)
+        viewModel.setPhotoAsWallpaper(photo2)
+        advanceUntilIdle()
+
+        // Advance past debounce window to ensure debounce was cancelled and does not fire a second time
+        advanceTimeBy(2000L)
+        advanceUntilIdle()
+
+        assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(1)
+        assertThat(viewModel.currentPreviewPhoto.value?.id).isEqualTo("p2")
+        coVerify(exactly = 1) { wallpaperRepository.setPhotoAsWallpaper(photo2) }
+        assertThat(emittedEvents).contains(UiEvent.ShowSnackbar("Wallpaper updated to selected photo!"))
+    }
+
+    @Test
+    fun `setPhotoAsWallpaper when live wallpaper is inactive emits static wallpaper snackbar`() = runTest(testDispatcher) {
+        val photo1 = PhotoItem(id = "p1", albumId = "a1", uri = "content://media/1")
+        val photo2 = PhotoItem(id = "p2", albumId = "a1", uri = "content://media/2")
+        selectedPhotosFlow.value = listOf(photo1, photo2)
+        activePhotoFlow.value = photo1
+        coEvery { wallpaperRepository.isLiveWallpaperActive() } returns false
+
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        val emittedEvents = mutableListOf<UiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.eventFlow.collect { emittedEvents.add(it) }
+        }
+        advanceUntilIdle()
+
+        viewModel.setPhotoAsWallpaper(photo2)
+        advanceUntilIdle()
+
+        assertThat(viewModel.selectedPreviewPhotoIndex.value).isEqualTo(1)
+        coVerify(exactly = 1) { wallpaperRepository.setPhotoAsWallpaper(photo2) }
+        assertThat(emittedEvents).contains(
+            UiEvent.ShowSnackbar("Wallpaper set as static image. Activate Live Wallpaper for double-tap gestures & 10s rotation!")
+        )
+    }
+
+    @Test
+    fun `setPhotoAsWallpaper emits error snackbar when repository fails`() = runTest(testDispatcher) {
+        val photo1 = PhotoItem(id = "p1", albumId = "a1", uri = "content://media/1")
+        selectedPhotosFlow.value = listOf(photo1)
+        coEvery { wallpaperRepository.setPhotoAsWallpaper(photo1) } returns Result.failure(IllegalStateException("Disk read error"))
+
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        val emittedEvents = mutableListOf<UiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.eventFlow.collect { emittedEvents.add(it) }
+        }
+        advanceUntilIdle()
+
+        viewModel.setPhotoAsWallpaper(photo1)
+        advanceUntilIdle()
+
+        assertThat(emittedEvents).contains(UiEvent.ShowSnackbar("Failed to update wallpaper: Disk read error"))
+    }
 }

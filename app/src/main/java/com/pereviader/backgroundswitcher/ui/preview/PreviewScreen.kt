@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -70,6 +71,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -428,6 +430,7 @@ private fun BottomBrowsingControls(
                             shape = RoundedCornerShape(8.dp)
                         )
                         .clickable { onSelectPhotoIndex(index) }
+                        .testTag("filmstrip_item_${photo.id}")
                 ) {
                     AsyncImage(
                         model = photo.uri,
@@ -525,8 +528,21 @@ private fun DraggablePhotoPreview(
         }
     }
 
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
+
     Box(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("photo_preview")
+            .then(
+                if (isLoading || isError || bitmap == null) {
+                    Modifier.pointerInput(photo.id) {
+                        detectTapGestures(onLongPress = { currentOnLongPress() })
+                    }
+                } else {
+                    Modifier
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         when {

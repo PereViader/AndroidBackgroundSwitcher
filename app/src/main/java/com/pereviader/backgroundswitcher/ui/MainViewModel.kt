@@ -141,6 +141,11 @@ class MainViewModel @Inject constructor(
                 photos to activePhoto
             }.collectLatest { (photos, activePhoto) ->
                 if (photos.isNotEmpty()) {
+                    if (_userSelectedPhoto.value != null && activePhoto != null &&
+                        (_userSelectedPhoto.value?.id == activePhoto.id || _userSelectedPhoto.value?.uri == activePhoto.uri)
+                    ) {
+                        _userSelectedPhoto.value = null
+                    }
                     val userPhoto = _userSelectedPhoto.value
                     if (userPhoto != null) {
                         val userIdx = photos.indexOfFirst { it.id == userPhoto.id || it.uri == userPhoto.uri }
@@ -273,12 +278,18 @@ class MainViewModel @Inject constructor(
         updateWallpaperDebounceJob?.cancel()
         updateWallpaperDebounceJob = null
         pendingWallpaperPhoto = null
-        _userSelectedPhoto.value = null
+        _userSelectedPhoto.value = photo
+
+        val idx = previewPhotos.value.indexOfFirst { it.id == photo.id || it.uri == photo.uri }
+        if (idx >= 0) {
+            _selectedPreviewPhotoIndex.value = idx
+        }
 
         viewModelScope.launch {
             val isLive = wallpaperRepository.isLiveWallpaperActive()
             val result = wallpaperRepository.setPhotoAsWallpaper(photo)
             if (result.isSuccess) {
+                _userSelectedPhoto.value = null
                 if (isLive) {
                     _eventFlow.emit(UiEvent.ShowSnackbar("Wallpaper updated to selected photo!"))
                 } else {

@@ -189,10 +189,14 @@ class WallpaperCycleCoordinator(
 
             is CycleTrigger.ExternalPhotoChanged -> {
                 val photo = trigger.photo
+                val referencePhoto = if (isCycling && targetPhoto != null) targetPhoto else activePhoto
                 val isDifferentPhoto = photo.id != activePhoto?.id && photo.id != targetPhoto?.id
-                val isCropChanged = photo.id == activePhoto?.id && isCropOrFramingChanged(photo)
+                val isCropChanged = photo.id == referencePhoto?.id && isCropOrFramingChanged(photo, referencePhoto)
 
-                if ((isDifferentPhoto || isCropChanged) && !isCycling) {
+                if (isDifferentPhoto || isCropChanged) {
+                    if (isCycling) {
+                        targetPhoto = photo
+                    }
                     return CycleDecision.TransitionTo(
                         targetPhoto = photo,
                         reason = if (isCropChanged) "crop_updated" else "external_selection",
@@ -225,8 +229,8 @@ class WallpaperCycleCoordinator(
         activePhoto = photo
     }
 
-    private fun isCropOrFramingChanged(newPhoto: PhotoItem): Boolean {
-        val current = activePhoto ?: return true
+    private fun isCropOrFramingChanged(newPhoto: PhotoItem, reference: PhotoItem? = activePhoto): Boolean {
+        val current = reference ?: return true
         return newPhoto.cropX != current.cropX ||
             newPhoto.cropY != current.cropY ||
             newPhoto.zoom != current.zoom
