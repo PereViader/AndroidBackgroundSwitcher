@@ -23,6 +23,7 @@ truth = "1.4.4"
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
 androidxTestExtJunit = "1.2.1"
+documentfile = "1.0.1"
 
 [libraries]
 # AndroidX Core & Lifecycle
@@ -31,6 +32,7 @@ androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecyc
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-window = { group = "androidx.window", name = "window", version.ref = "window" }
+androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 
 # Jetpack Compose
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }

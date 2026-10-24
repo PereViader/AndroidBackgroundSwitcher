@@ -37,14 +37,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.pereviader.backgroundswitcher.data.remote.GoogleDriveFolderParser
-import com.pereviader.backgroundswitcher.data.remote.GooglePhotosShareParser
 import com.pereviader.backgroundswitcher.domain.repository.AlbumRepository
 import com.pereviader.backgroundswitcher.ui.MainActivity
 import com.pereviader.backgroundswitcher.ui.theme.BackgroundSwitcherTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
-import okhttp3.OkHttpClient
 import javax.inject.Inject
 
 sealed class ImportState {
@@ -58,16 +55,6 @@ class ShareReceiverActivity : ComponentActivity() {
 
     @Inject
     lateinit var albumRepository: AlbumRepository
-
-    @Inject
-    lateinit var googlePhotosParser: GooglePhotosShareParser
-
-    @Inject
-    lateinit var googleDriveParser: GoogleDriveFolderParser
-
-    private val activeDriveParser: GoogleDriveFolderParser by lazy {
-        if (::googleDriveParser.isInitialized) googleDriveParser else GoogleDriveFolderParser(OkHttpClient())
-    }
 
     private var currentIntentState by mutableStateOf<Intent?>(null)
 
@@ -114,96 +101,36 @@ class ShareReceiverActivity : ComponentActivity() {
         val type = intent.type
 
         val isSupportedAction = action == Intent.ACTION_SEND ||
-            action == Intent.ACTION_SEND_MULTIPLE ||
-            action == Intent.ACTION_VIEW
+            action == Intent.ACTION_SEND_MULTIPLE
 
         if (!isSupportedAction) {
             onStateChange(ImportState.Error("Unsupported content shared."))
             return
         }
 
-        // 1. Always check for an extractable Google Drive folder or Google Photos / web album URL first,
-        // regardless of MIME type (Google Photos/Drive may set text/*, */*, or image/* when attaching a link preview).
-        val driveFolderUrl = extractSharedDriveFolderUrl(intent)
-        if (driveFolderUrl != null) {
-            val result = albumRepository.addGoogleDriveFolder(driveFolderUrl)
+        val imageUris = extractSharedImageUris(intent)
+        if (imageUris.isNotEmpty()) {
+            val result = albumRepository.importSharedPhotos(imageUris.map { it.toString() })
             if (result.isSuccess) {
                 val album = result.getOrNull()
-                onStateChange(
-                    ImportState.Success(
-                        albumName = album?.name ?: "Google Drive Folder",
-                        photoCount = album?.photoCount ?: 0
-                    )
-                )
-                delay(1200)
+                val albumName = album?.name ?: "Shared Photos"
+                val photoCount = album?.photoCount ?: imageUris.size
+                onStateChange(ImportState.Success(albumName, photoCount))
+                delay(1000)
                 openMainActivity()
                 finish()
             } else {
-                val error = result.exceptionOrNull()?.localizedMessage
-                    ?: result.exceptionOrNull()?.message
-                    ?: "Failed to parse Google Drive folder."
-                onStateChange(ImportState.Error(error))
-            }
-            return
-        }
-
-        val albumUrl = extractSharedAlbumUrl(intent)
-        if (albumUrl != null) {
-            val result = albumRepository.importGooglePhotosAlbum(albumUrl)
-            if (result.isSuccess) {
-                val album = result.getOrNull()
-                onStateChange(
-                    ImportState.Success(
-                        albumName = album?.name ?: "Google Photos Album",
-                        photoCount = album?.photoCount ?: 0
-                    )
-                )
-                delay(1200)
-                openMainActivity()
-                finish()
-            } else {
-                val error = result.exceptionOrNull()?.localizedMessage
-                    ?: result.exceptionOrNull()?.message
-                    ?: "Failed to parse Google Photos album."
-                onStateChange(ImportState.Error(error))
-            }
-            return
-        }
-
-        // 2. If no album URL was found, check for shared image stream URIs (single or multiple)
-        val canContainImages = type?.startsWith("image/") == true ||
-            type == "*/*" ||
-            intent.hasExtra(Intent.EXTRA_STREAM)
-
-        if (canContainImages) {
-            val imageUris = extractSharedImageUris(intent)
-            if (imageUris.isNotEmpty()) {
-                val result = albumRepository.importSharedPhotos(imageUris.map { it.toString() })
-                if (result.isSuccess) {
-                    onStateChange(ImportState.Success("Shared Photos", imageUris.size))
-                    delay(1000)
-                    openMainActivity()
-                    finish()
+                val prefix = if (action == Intent.ACTION_SEND_MULTIPLE) {
+                    "Failed to import photos"
                 } else {
-                    val prefix = if (action == Intent.ACTION_SEND_MULTIPLE) {
-                        "Failed to import photos"
-                    } else {
-                        "Failed to import photo"
-                    }
-                    onStateChange(ImportState.Error("$prefix: ${result.exceptionOrNull()?.message}"))
+                    "Failed to import photo"
                 }
-                return
+                onStateChange(ImportState.Error("$prefix: ${result.exceptionOrNull()?.message}"))
             }
+            return
         }
 
-        // 3. Report appropriate error when neither URL nor image URIs could be extracted
-        val hasTextCandidates = extractSharedTextCandidates(intent).any { it.isNotBlank() }
         when {
-            type?.startsWith("text/") == true || hasTextCandidates -> {
-                onStateChange(
-                    ImportState.Error("No valid Google Photos link was found in the shared text.")
-                )
-            }
             action == Intent.ACTION_SEND && type?.startsWith("image/") == true -> {
                 onStateChange(ImportState.Error("No image received."))
             }
@@ -216,123 +143,11 @@ class ShareReceiverActivity : ComponentActivity() {
         }
     }
 
-    internal fun extractSharedDriveFolderUrl(intent: Intent): String? {
-        val candidates = extractSharedTextCandidates(intent)
-        for (candidate in candidates) {
-            val driveUrl = activeDriveParser.extractGoogleDriveFolderUrl(candidate)
-            if (driveUrl != null) {
-                return driveUrl
-            }
-        }
-        return null
-    }
-
-    internal fun extractSharedAlbumUrl(intent: Intent): String? {
-        val candidates = extractSharedTextCandidates(intent)
-
-        // First pass: look specifically for a Google Photos link across all candidates
-        for (candidate in candidates) {
-            val googlePhotosUrl = googlePhotosParser.extractGooglePhotosUrl(candidate)
-            if (googlePhotosUrl != null) {
-                return googlePhotosUrl
-            }
-        }
-
-        // Second pass: if this is a text/link share, allow generic http/https URLs
-        val type = intent.type
-        val isTextOrLinkShare = type == null ||
-            type.startsWith("text/") ||
-            type == "*/*" ||
-            intent.action == Intent.ACTION_VIEW
-
-        if (isTextOrLinkShare) {
-            for (candidate in candidates) {
-                val genericUrl = googlePhotosParser.extractUrl(candidate)
-                if (genericUrl != null) {
-                    return genericUrl
-                }
-            }
-        }
-
-        return null
-    }
-
-    internal fun extractSharedTextCandidates(intent: Intent): List<String> {
-        val candidates = LinkedHashSet<String>()
-
-        fun addCandidate(value: CharSequence?) {
-            val str = value?.toString()?.trim()
-            if (!str.isNullOrEmpty()) {
-                candidates.add(str)
-            }
-        }
-
-        // 1. Standard EXTRA_TEXT (as CharSequence to support SpannableString, and as String)
-        addCandidate(intent.getCharSequenceExtra(Intent.EXTRA_TEXT))
-        addCandidate(intent.getStringExtra(Intent.EXTRA_TEXT))
-
-        // 2. ArrayList<CharSequence> / ArrayList<String> in EXTRA_TEXT
-        intent.getCharSequenceArrayListExtra(Intent.EXTRA_TEXT)?.forEach { addCandidate(it) }
-        intent.getStringArrayListExtra(Intent.EXTRA_TEXT)?.forEach { addCandidate(it) }
-
-        // 3. HTML text, subject, and title extras
-        addCandidate(intent.getCharSequenceExtra(Intent.EXTRA_HTML_TEXT))
-        addCandidate(intent.getStringExtra(Intent.EXTRA_HTML_TEXT))
-        addCandidate(intent.getCharSequenceExtra(Intent.EXTRA_SUBJECT))
-        addCandidate(intent.getCharSequenceExtra(Intent.EXTRA_TITLE))
-
-        // 4. Intent data URI (if web link or Google Photos link)
-        intent.dataString?.let { dataStr ->
-            if (isWebOrGooglePhotosUriString(dataStr)) {
-                addCandidate(dataStr)
-            }
-        }
-
-        // 5. ClipData items (Android 10+ Sharesheet and Google Photos often attach text/URIs here)
-        val clipData = intent.clipData
-        if (clipData != null) {
-            for (i in 0 until clipData.itemCount) {
-                val item = clipData.getItemAt(i) ?: continue
-                addCandidate(item.text)
-                addCandidate(item.htmlText)
-                val itemUriStr = item.uri?.toString()
-                if (itemUriStr != null && isWebOrGooglePhotosUriString(itemUriStr)) {
-                    addCandidate(itemUriStr)
-                }
-            }
-        }
-
-        // 6. EXTRA_STREAM if it is an http/https Uri
-        val singleStreamUri = getSingleStreamUri(intent)
-        if (singleStreamUri != null && isWebOrGooglePhotosUriString(singleStreamUri.toString())) {
-            addCandidate(singleStreamUri.toString())
-        }
-
-        // 7. Fallback: scan remaining extras for any CharSequence or web Uri
-        val extras = intent.extras
-        if (extras != null) {
-            for (key in extras.keySet()) {
-                @Suppress("DEPRECATION")
-                when (val value = extras.get(key)) {
-                    is CharSequence -> addCandidate(value)
-                    is Uri -> {
-                        val uriStr = value.toString()
-                        if (isWebOrGooglePhotosUriString(uriStr)) {
-                            addCandidate(uriStr)
-                        }
-                    }
-                }
-            }
-        }
-
-        return candidates.toList()
-    }
-
     internal fun extractSharedImageUris(intent: Intent): List<Uri> {
         val uris = LinkedHashSet<Uri>()
 
         fun addIfImageUri(uri: Uri?) {
-            if (uri != null && !isWebOrGooglePhotosUriString(uri.toString())) {
+            if (uri != null) {
                 uris.add(uri)
             }
         }
@@ -379,15 +194,6 @@ class ShareReceiverActivity : ComponentActivity() {
         }.getOrNull()
     }
 
-    private fun isWebOrGooglePhotosUriString(uriStr: String): Boolean {
-        return uriStr.startsWith("http://", ignoreCase = true) ||
-            uriStr.startsWith("https://", ignoreCase = true) ||
-            uriStr.contains("photos.app.goo.gl", ignoreCase = true) ||
-            uriStr.contains("photos.google.com", ignoreCase = true) ||
-            uriStr.contains("goo.gl/photos", ignoreCase = true) ||
-            uriStr.contains("drive.google.com", ignoreCase = true)
-    }
-
     private fun openMainActivity() {
         if (baseContext == null) return
         val launchIntent = Intent(this, MainActivity::class.java).apply {
@@ -432,13 +238,13 @@ private fun ShareReceiverDialog(
                             CircularProgressIndicator(modifier = Modifier.size(48.dp))
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "Importing album from Google Photos...",
+                                text = "Importing shared photo(s)...",
                                 style = MaterialTheme.typography.titleMedium,
                                 textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Extracting high-resolution wallpapers",
+                                text = "Preparing wallpapers",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

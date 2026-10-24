@@ -1,5 +1,6 @@
 package com.pereviader.backgroundswitcher.ui
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pereviader.backgroundswitcher.background.WorkScheduler
@@ -417,46 +418,37 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun importGooglePhotosAlbum(url: String) {
+    fun importGoogleDriveFolder(treeUri: Uri, folderName: String? = null) {
         viewModelScope.launch {
             _isRefreshing.value = true
-            val result = albumRepository.importGooglePhotosAlbum(url)
+            val result = albumRepository.importGoogleDriveFolder(treeUri, folderName)
             _isRefreshing.value = false
             if (result.isSuccess) {
                 val album = result.getOrNull()
                 _eventFlow.emit(UiEvent.ShowSnackbar("Imported '${album?.name}' (${album?.photoCount} photos)"))
             } else {
-                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to import: ${result.exceptionOrNull()?.message}"))
+                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to import Google Drive folder: ${result.exceptionOrNull()?.message}"))
             }
         }
     }
 
-    fun addGoogleDriveFolder(url: String) {
+    fun importGooglePhotosFromPicker(uris: List<Uri>, albumName: String? = null) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
             _isRefreshing.value = true
-            val result = albumRepository.addGoogleDriveFolder(url)
+            val result = albumRepository.importGooglePhotosFromPicker(uris.map { it.toString() }, albumName)
             _isRefreshing.value = false
             if (result.isSuccess) {
                 val album = result.getOrNull()
-                _eventFlow.emit(UiEvent.ShowSnackbar("Imported '${album?.name}' (${album?.photoCount} photos)"))
+                _eventFlow.emit(UiEvent.ShowSnackbar("Imported ${album?.photoCount} photos from Google Photos"))
             } else {
-                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to import: ${result.exceptionOrNull()?.message}"))
+                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to import photos: ${result.exceptionOrNull()?.message}"))
             }
         }
     }
 
     fun syncGooglePhotosAlbum(albumId: String) {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val result = albumRepository.syncGooglePhotosAlbum(albumId)
-            _isRefreshing.value = false
-            if (result.isSuccess) {
-                val album = result.getOrNull()
-                _eventFlow.emit(UiEvent.ShowSnackbar("Synced '${album?.name}' (${album?.photoCount} photos)"))
-            } else {
-                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to sync: ${result.exceptionOrNull()?.message}"))
-            }
-        }
+        syncGoogleDriveFolder(albumId)
     }
 
     fun syncGoogleDriveFolder(albumId: String) {

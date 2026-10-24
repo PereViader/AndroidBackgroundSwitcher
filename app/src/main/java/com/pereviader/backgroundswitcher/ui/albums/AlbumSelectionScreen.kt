@@ -1,6 +1,11 @@
 package com.pereviader.backgroundswitcher.ui.albums
 
-import androidx.compose.foundation.background
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +18,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,12 +26,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Preview
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
@@ -35,13 +39,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -55,10 +57,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,117 +74,152 @@ fun AlbumSelectionScreen(
     albums: List<Album>,
     onToggleAlbum: (String, Boolean) -> Unit,
     onRefresh: () -> Unit,
-    onImportGooglePhotosUrl: (String) -> Unit,
-    onSyncGooglePhotosAlbum: (String) -> Unit,
+    onImportGoogleDriveFolder: (Uri) -> Unit = {},
+    onImportGooglePhotos: (List<Uri>) -> Unit = {},
+    onSyncAlbum: (String) -> Unit = {},
     onDeleteAlbum: (String) -> Unit,
     getPhotosForAlbum: (String) -> Flow<List<PhotoItem>>,
     onTogglePhotoSelection: (photoId: String, isSelected: Boolean) -> Unit = { _, _ -> },
     onOpenAlbumInPreview: (albumId: String, photoId: String?) -> Unit = { _, _ -> },
+    onImportGooglePhotosUrl: (String) -> Unit = {},
+    onSyncGooglePhotosAlbum: (String) -> Unit = onSyncAlbum,
     modifier: Modifier = Modifier
 ) {
-    var showImportDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var showAddSourceDialog by remember { mutableStateOf(false) }
     var selectedAlbumForDetails by remember { mutableStateOf<Album?>(null) }
     var albumToDelete by remember { mutableStateOf<Album?>(null) }
+
+    val driveFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri: Uri? ->
+        if (treeUri != null) {
+            try {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(treeUri, flags)
+            } catch (_: SecurityException) {
+            }
+            onImportGoogleDriveFolder(treeUri)
+        }
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            onImportGooglePhotos(uris)
+        }
+    }
+
+    val activeAlbum = selectedAlbumForDetails?.let { selected ->
+        albums.find { it.id == selected.id } ?: selected
+    }
+
+    BackHandler(enabled = activeAlbum != null) {
+        selectedAlbumForDetails = null
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showImportDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Import Album")
+            if (activeAlbum == null) {
+                FloatingActionButton(
+                    onClick = { showAddSourceDialog = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.testTag("add_album_fab")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Album")
+                }
             }
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            // Header with Refresh Action
-            Row(
+        if (activeAlbum != null) {
+            AlbumPhotosFullScreen(
+                album = activeAlbum,
+                photosFlow = getPhotosForAlbum(activeAlbum.id),
+                onBack = { selectedAlbumForDetails = null },
+                onSelectAll = { onToggleAlbum(activeAlbum.id, true) },
+                onDeselectAll = { onToggleAlbum(activeAlbum.id, false) },
+                onTogglePhotoSelection = onTogglePhotoSelection,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
             ) {
-                Column {
-                    Text(
-                        text = "Albums (${albums.size})",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        text = "Tap an album to view photos • Checkbox selects for cycling",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = onRefresh) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh device albums")
-                }
-            }
-
-            if (albums.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                // Header with Refresh Action
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = "No albums found.\nGrant media permissions or import a Google Photos album.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(albums, key = { it.id }) { album ->
-                        AlbumCard(
-                            album = album,
-                            onToggle = { isChecked -> onToggleAlbum(album.id, isChecked) },
-                            onClick = { selectedAlbumForDetails = album },
-                            onSync = { onSyncGooglePhotosAlbum(album.id) },
-                            onDelete = { albumToDelete = album }
+                    Column {
+                        Text(
+                            text = "Albums (${albums.size})",
+                            style = MaterialTheme.typography.titleLarge
                         )
+                        Text(
+                            text = "Tap an album to view photos • Checkbox selects for cycling",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onRefresh) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh device albums")
+                    }
+                }
+
+                if (albums.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No albums found.\nGrant media permissions, pick from Google Photos, or add a Google Drive folder.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(albums, key = { it.id }) { album ->
+                            AlbumCard(
+                                album = album,
+                                onToggle = { isChecked -> onToggleAlbum(album.id, isChecked) },
+                                onClick = { selectedAlbumForDetails = album },
+                                onSync = { onSyncGooglePhotosAlbum(album.id) },
+                                onDelete = { albumToDelete = album }
+                            )
+                        }
                     }
                 }
             }
         }
 
-        if (showImportDialog) {
-            ImportGooglePhotosDialog(
-                onDismiss = { showImportDialog = false },
-                onImport = { url ->
-                    showImportDialog = false
-                    onImportGooglePhotosUrl(url)
-                }
-            )
-        }
-
-        selectedAlbumForDetails?.let { album ->
-            AlbumPhotosDialog(
-                album = album,
-                photosFlow = getPhotosForAlbum(album.id),
-                onDismiss = { selectedAlbumForDetails = null },
-                onSync = { onSyncGooglePhotosAlbum(album.id) },
-                onDelete = {
-                    selectedAlbumForDetails = null
-                    albumToDelete = album
+        if (showAddSourceDialog) {
+            AddAlbumSourceDialog(
+                onDismiss = { showAddSourceDialog = false },
+                onSelectGoogleDrive = {
+                    showAddSourceDialog = false
+                    driveFolderLauncher.launch(null)
                 },
-                onToggleAlbumSelection = { selectAll ->
-                    onToggleAlbum(album.id, selectAll)
-                },
-                onTogglePhotoSelection = onTogglePhotoSelection,
-                onOpenInPreview = { photoId ->
-                    selectedAlbumForDetails = null
-                    onOpenAlbumInPreview(album.id, photoId)
+                onSelectGooglePhotos = {
+                    showAddSourceDialog = false
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
                 }
             )
         }
@@ -214,6 +250,133 @@ fun AlbumSelectionScreen(
 }
 
 @Composable
+private fun AddAlbumSourceDialog(
+    onDismiss: () -> Unit,
+    onSelectGoogleDrive: () -> Unit,
+    onSelectGooglePhotos: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Add Wallpapers",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Select wallpapers from your private Google account on this device:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Option 1: Google Drive Folder
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectGoogleDrive() }
+                        .testTag("add_google_drive_option"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Cloud,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Add Google Drive Folder",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Choose any private Drive folder with automatic background sync",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Option 2: Google Photos Picker
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectGooglePhotos() }
+                        .testTag("pick_google_photos_option"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoLibrary,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Pick from Google Photos",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Select private photos directly from your Google Photos library",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
 private fun AlbumCard(
     album: Album,
     onToggle: (Boolean) -> Unit,
@@ -221,13 +384,18 @@ private fun AlbumCard(
     onSync: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val isGooglePhotos = album.source == AlbumSource.GOOGLE_PHOTOS_SHARE
+    val isGooglePhotos = album.source == AlbumSource.GOOGLE_PHOTOS_PICKER || album.source == AlbumSource.GOOGLE_PHOTOS_SHARE
     val isGoogleDrive = album.source == AlbumSource.GOOGLE_DRIVE_FOLDER
     val isCloudAlbum = isGooglePhotos || isGoogleDrive
     val sourceBadgeLabel = when (album.source) {
         AlbumSource.GOOGLE_DRIVE_FOLDER -> "Google Drive"
-        AlbumSource.GOOGLE_PHOTOS_SHARE -> "Cloud"
+        AlbumSource.GOOGLE_PHOTOS_PICKER, AlbumSource.GOOGLE_PHOTOS_SHARE -> "Google Photos"
         else -> "Local"
+    }
+    val badgeIcon = when (album.source) {
+        AlbumSource.GOOGLE_DRIVE_FOLDER -> Icons.Default.Cloud
+        AlbumSource.GOOGLE_PHOTOS_PICKER, AlbumSource.GOOGLE_PHOTOS_SHARE -> Icons.Default.PhotoLibrary
+        else -> Icons.Default.Folder
     }
 
     Card(
@@ -294,7 +462,7 @@ private fun AlbumCard(
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Icon(
-                            imageVector = if (isCloudAlbum) Icons.Default.Cloud else Icons.Default.Folder,
+                            imageVector = badgeIcon,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(14.dp)
@@ -334,21 +502,27 @@ private fun AlbumCard(
 
                 if (isCloudAlbum) {
                     Row {
-                        IconButton(
-                            onClick = onSync,
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Sync,
-                                contentDescription = "Sync Album",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                        if (!album.sourceUrl.isNullOrBlank()) {
+                            IconButton(
+                                onClick = onSync,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .testTag("album_sync_${album.id}")
+                            ) {
+                                Icon(
+                                    Icons.Default.Sync,
+                                    contentDescription = "Sync Album",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
                         IconButton(
                             onClick = onDelete,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier
+                                .size(24.dp)
+                                .testTag("album_delete_${album.id}")
                         ) {
                             Icon(
                                 Icons.Default.Delete,
@@ -365,233 +539,140 @@ private fun AlbumCard(
 }
 
 @Composable
-private fun AlbumPhotosDialog(
+private fun AlbumPhotosFullScreen(
     album: Album,
     photosFlow: Flow<List<PhotoItem>>,
-    onDismiss: () -> Unit,
-    onSync: () -> Unit,
-    onDelete: () -> Unit,
-    onToggleAlbumSelection: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDeselectAll: () -> Unit,
     onTogglePhotoSelection: (photoId: String, isSelected: Boolean) -> Unit,
-    onOpenInPreview: (photoId: String?) -> Unit
+    modifier: Modifier = Modifier
 ) {
     val photos by photosFlow.collectAsState(initial = emptyList())
-    val isGooglePhotos = album.source == AlbumSource.GOOGLE_PHOTOS_SHARE
-    val isGoogleDrive = album.source == AlbumSource.GOOGLE_DRIVE_FOLDER
-    val isCloudAlbum = isGooglePhotos || isGoogleDrive
-    val sourceLabel = when (album.source) {
-        AlbumSource.GOOGLE_PHOTOS_SHARE -> "Google Photos"
-        AlbumSource.GOOGLE_DRIVE_FOLDER -> "Google Drive"
-        else -> "Device Album"
-    }
-    val selectedCount = photos.count { it.isSelected }
-    val allSelected = photos.isNotEmpty() && selectedCount == photos.size
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("album_photos_fullscreen")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            TextButton(
+                onClick = onBack,
+                modifier = Modifier.testTag("album_back_button")
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Back")
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDeselectAll,
+                    modifier = Modifier.testTag("deselect_all_button")
                 ) {
-                    Text(
-                        text = album.name,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isCloudAlbum) {
-                            IconButton(onClick = onSync) {
-                                Icon(
-                                    Icons.Default.Sync,
-                                    contentDescription = if (isGoogleDrive) "Sync from Google Drive" else "Sync from Google Photos"
-                                )
-                            }
-                        }
-                    }
+                    Text("Deselect All")
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+
+                Button(
+                    onClick = onSelectAll,
+                    modifier = Modifier.testTag("select_all_button")
                 ) {
-                    Text(
-                        text = "$selectedCount / ${photos.size} selected • $sourceLabel",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (photos.isNotEmpty()) {
-                            TextButton(onClick = { onToggleAlbumSelection(!allSelected) }) {
-                                Text(
-                                    text = if (allSelected) "Deselect All" else "Select All",
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
-                        }
-                        TextButton(onClick = { onOpenInPreview(null) }) {
-                            Icon(Icons.Default.Preview, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Preview & Edit", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
+                    Text("Select All")
                 }
             }
-        },
-        text = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 200.dp, max = 400.dp)
-            ) {
-                if (photos.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.Folder,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "No photos in this album",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+        }
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            if (photos.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "No photos in this album",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        contentPadding = PaddingValues(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(photos, key = { it.id }) { photo ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .border(
-                                        width = if (photo.isSelected) 2.5.dp else 1.dp,
-                                        color = if (photo.isSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.outlineVariant
-                                        },
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    .clickable { onTogglePhotoSelection(photo.id, !photo.isSelected) }
-                                    .testTag("album_photo_${photo.id}")
-                            ) {
-                                AsyncImage(
-                                    model = photo.uri,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer {
-                                            if (!photo.isSelected) {
-                                                alpha = 0.65f
-                                            }
-                                        }
-                                )
-                                Checkbox(
-                                    checked = photo.isSelected,
-                                    onCheckedChange = { isChecked ->
-                                        onTogglePhotoSelection(photo.id, isChecked)
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    contentPadding = PaddingValues(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("album_photos_grid")
+                ) {
+                    items(photos, key = { it.id }) { photo ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(
+                                    width = if (photo.isSelected) 2.5.dp else 1.dp,
+                                    color = if (photo.isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.outlineVariant
                                     },
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .testTag("photo_toggle_${photo.id}")
+                                    shape = RoundedCornerShape(8.dp)
                                 )
-                            }
+                                .clickable { onTogglePhotoSelection(photo.id, !photo.isSelected) }
+                                .testTag("album_photo_${photo.id}")
+                        ) {
+                            AsyncImage(
+                                model = photo.uri,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        if (!photo.isSelected) {
+                                            alpha = 0.65f
+                                        }
+                                    }
+                            )
+                            Checkbox(
+                                checked = photo.isSelected,
+                                onCheckedChange = { isChecked ->
+                                    onTogglePhotoSelection(photo.id, isChecked)
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .testTag("photo_toggle_${photo.id}")
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss) {
-                Text("Close")
-            }
-        },
-        dismissButton = {
-            if (isCloudAlbum) {
-                OutlinedButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Delete")
-                }
-            }
         }
-    )
-}
-
-@Composable
-private fun ImportGooglePhotosDialog(
-    onDismiss: () -> Unit,
-    onImport: (String) -> Unit
-) {
-    var url by remember { mutableStateOf("") }
-    val clipboardManager = LocalClipboardManager.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Import Cloud Album") },
-        text = {
-            Column {
-                Text(
-                    text = "Tip: In Google Photos or Google Drive, tap Share on any album or folder and choose 'Background Switcher', or paste its shared link below:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = { url = it },
-                    label = { Text("Album or Folder Shared Link") },
-                    placeholder = { Text("https://photos.app.goo.gl/... or https://drive.google.com/drive/folders/...") },
-                    trailingIcon = {
-                        IconButton(onClick = {
-                            clipboardManager.getText()?.text?.let { clipText ->
-                                url = clipText
-                            }
-                        }) {
-                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste from clipboard")
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onImport(url.trim()) },
-                enabled = url.isNotBlank()
-            ) {
-                Text("Import")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
+    }
 }

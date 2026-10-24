@@ -71,6 +71,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.window)
+    implementation(libs.androidx.documentfile)
 
     // Jetpack Compose
     implementation(platform(libs.androidx.compose.bom))

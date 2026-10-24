@@ -48,7 +48,7 @@ class AlbumSelectionScreenTest {
     )
 
     @Test
-    fun `opening album dialog shows Select All and allows bulk selection and individual photo toggling`() {
+    fun `opening album opens full screen view with Back, Deselect All, Select All and photo grid, and going back returns to albums page`() {
         val photosFlow = MutableStateFlow(listOf(samplePhoto1, samplePhoto2))
         var bulkSelectedAlbumId: String? = null
         var bulkSelectedState: Boolean? = null
@@ -78,26 +78,51 @@ class AlbumSelectionScreenTest {
             )
         }
 
-        // Click album card to open dialog
+        // Initially on albums page
+        composeTestRule.onNodeWithText("Albums (1)").assertIsDisplayed()
+
+        // Click album card to open full screen album view
         composeTestRule.onNodeWithText("Nature").performClick()
 
-        // Initially 0 / 2 selected, button shows "Select All"
-        composeTestRule.onNodeWithText("Select All").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Select All").performClick()
+        // Album list header is replaced by full screen album view
+        composeTestRule.onNodeWithText("Albums (1)").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("album_photos_fullscreen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("album_photos_grid").assertIsDisplayed()
 
+        // Back, Deselect All, and Select All buttons are all displayed at the top
+        composeTestRule.onNodeWithText("Back").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Deselect All").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Select All").assertIsDisplayed()
+
+        // Click Select All
+        composeTestRule.onNodeWithText("Select All").performClick()
         assertThat(bulkSelectedAlbumId).isEqualTo("album_1")
         assertThat(bulkSelectedState).isTrue()
 
-        // Now all photos are selected, button changes to "Deselect All"
+        // Both Select All and Deselect All remain displayed
+        composeTestRule.onNodeWithText("Select All").assertIsDisplayed()
         composeTestRule.onNodeWithText("Deselect All").assertIsDisplayed()
 
-        // Untoggle individual photo p1 after selecting all
+        // Click Deselect All
+        composeTestRule.onNodeWithText("Deselect All").performClick()
+        assertThat(bulkSelectedAlbumId).isEqualTo("album_1")
+        assertThat(bulkSelectedState).isFalse()
+
+        // Select All again, then untoggle individual photo p1
+        composeTestRule.onNodeWithText("Select All").performClick()
         composeTestRule.onNodeWithTag("photo_toggle_p1").performClick()
         assertThat(toggledPhotoId).isEqualTo("p1")
         assertThat(toggledPhotoState).isFalse()
 
-        // Because p1 was untoggled, not all photos are selected, so "Select All" is displayed again
+        // Both buttons remain displayed when partially selected
         composeTestRule.onNodeWithText("Select All").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Deselect All").assertIsDisplayed()
+
+        // Going back brings back to the album page
+        composeTestRule.onNodeWithText("Back").performClick()
+        composeTestRule.onNodeWithTag("album_photos_fullscreen").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Albums (1)").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Nature").assertIsDisplayed()
     }
 
     @Test
@@ -110,17 +135,14 @@ class AlbumSelectionScreenTest {
             source = AlbumSource.GOOGLE_DRIVE_FOLDER,
             isSelected = true,
             selectedPhotoCount = 5,
-            sourceUrl = "https://drive.google.com/drive/folders/folder1"
+            sourceUrl = "content://com.google.android.apps.docs.storage/tree/folder1"
         )
-        var syncedAlbumId: String? = null
 
         composeTestRule.setContent {
             AlbumSelectionScreen(
                 albums = listOf(driveAlbum),
                 onToggleAlbum = { _, _ -> },
                 onRefresh = {},
-                onImportGooglePhotosUrl = {},
-                onSyncGooglePhotosAlbum = { id -> syncedAlbumId = id },
                 onDeleteAlbum = {},
                 getPhotosForAlbum = { MutableStateFlow(emptyList()) }
             )
@@ -129,5 +151,53 @@ class AlbumSelectionScreenTest {
         composeTestRule.onNodeWithText("Drive Landscapes").assertIsDisplayed()
         composeTestRule.onNodeWithText("Google Drive").assertIsDisplayed()
         composeTestRule.onNodeWithTag("album_source_badge_gd_folder1", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithTag("album_sync_gd_folder1").assertIsDisplayed()
+    }
+
+    @Test
+    fun `renders Google Photos badge for GOOGLE_PHOTOS_PICKER album card`() {
+        val photosAlbum = Album(
+            id = "google_photos_picker",
+            name = "Google Photos",
+            coverUri = "content://media/picker/0/101",
+            photoCount = 10,
+            source = AlbumSource.GOOGLE_PHOTOS_PICKER,
+            isSelected = true,
+            selectedPhotoCount = 10
+        )
+
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = listOf(photosAlbum),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = {},
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { MutableStateFlow(emptyList()) }
+            )
+        }
+
+        composeTestRule.onNodeWithText("Google Photos").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("album_source_badge_google_photos_picker", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun `clicking Add FAB displays action sheet with Google Drive and Google Photos options`() {
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = emptyList(),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = {},
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { MutableStateFlow(emptyList()) }
+            )
+        }
+
+        composeTestRule.onNodeWithTag("add_album_fab").performClick()
+
+        composeTestRule.onNodeWithText("Add Wallpapers").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Add Google Drive Folder").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Pick from Google Photos").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("add_google_drive_option").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("pick_google_photos_option").assertIsDisplayed()
     }
 }

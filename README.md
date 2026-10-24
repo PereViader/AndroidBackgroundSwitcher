@@ -62,7 +62,7 @@ AndroidBackgroundSwitcher/
 │   │   │   │   ├── data/
 │   │   │   │   │   ├── local/          # Room DB, DAOs, DataStore Preferences
 │   │   │   │   │   ├── mediastore/     # MediaStore scanner & ContentObserver
-│   │   │   │   │   ├── remote/         # Google Photos parser
+│   │   │   │   │   ├── saf/            # Storage Access Framework document tree scanner
 │   │   │   │   │   └── repository/     # Repository implementations
 │   │   │   │   ├── di/                 # Hilt Dependency Injection Modules
 │   │   │   │   ├── domain/             # Repository interfaces & Use Cases

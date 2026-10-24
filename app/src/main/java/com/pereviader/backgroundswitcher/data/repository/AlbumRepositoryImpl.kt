@@ -1,5 +1,6 @@
 package com.pereviader.backgroundswitcher.data.repository
 
+import android.net.Uri
 import com.pereviader.backgroundswitcher.core.model.Album
 import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
@@ -9,8 +10,7 @@ import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizatio
 import com.pereviader.backgroundswitcher.data.local.db.entity.AlbumEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreAlbumScanner
-import com.pereviader.backgroundswitcher.data.remote.GoogleDriveFolderParser
-import com.pereviader.backgroundswitcher.data.remote.GooglePhotosShareParser
+import com.pereviader.backgroundswitcher.data.saf.DocumentTreeScanner
 import com.pereviader.backgroundswitcher.domain.repository.AlbumRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
-import okhttp3.OkHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,24 +27,8 @@ class AlbumRepositoryImpl @Inject constructor(
     private val photoDao: PhotoDao,
     private val wallpaperCustomizationDao: WallpaperCustomizationDao,
     private val mediaStoreScanner: MediaStoreAlbumScanner,
-    private val googlePhotosParser: GooglePhotosShareParser,
-    private val googleDriveParser: GoogleDriveFolderParser
+    private val documentTreeScanner: DocumentTreeScanner
 ) : AlbumRepository {
-
-    constructor(
-        albumDao: AlbumDao,
-        photoDao: PhotoDao,
-        wallpaperCustomizationDao: WallpaperCustomizationDao,
-        mediaStoreScanner: MediaStoreAlbumScanner,
-        googlePhotosParser: GooglePhotosShareParser
-    ) : this(
-        albumDao = albumDao,
-        photoDao = photoDao,
-        wallpaperCustomizationDao = wallpaperCustomizationDao,
-        mediaStoreScanner = mediaStoreScanner,
-        googlePhotosParser = googlePhotosParser,
-        googleDriveParser = GoogleDriveFolderParser(OkHttpClient())
-    )
 
     override fun getAlbums(): Flow<List<Album>> {
         return combine(
@@ -165,75 +148,16 @@ class AlbumRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun importGooglePhotosAlbum(url: String): Result<Album> {
-        if (googleDriveParser.isValidGoogleDriveFolderUrl(url)) {
-            return addGoogleDriveFolder(url)
-        }
-        val parseResult = googlePhotosParser.parseAlbumUrl(url)
-        return parseResult.map { parsed ->
-            val albumEntity = parsed.album.toEntity().copy(isSelected = true)
-            albumDao.insertOrUpdate(albumEntity)
-            photoDao.deletePhotosByAlbum(parsed.album.id)
-            val photosToSave = parsed.photos.map { photo ->
-                val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
-                photo.toEntity().copy(
-                    cropX = customization?.cropX,
-                    cropY = customization?.cropY,
-                    zoom = customization?.zoom,
-                    isSelected = customization?.isSelected ?: true
-                )
+    override suspend fun importGoogleDriveFolder(treeUri: Uri, folderName: String?): Result<Album> {
+        return try {
+            val albumId = "gdrive_${treeUri.toString().hashCode().toUInt()}"
+            val scannedTree = documentTreeScanner.scanTree(treeUri, albumId, folderName)
+            if (scannedTree.photos.isEmpty()) {
+                return Result.failure(IllegalArgumentException("No image files found in selected folder"))
             }
-            photoDao.insertOrUpdateAll(photosToSave)
-            wallpaperCustomizationDao.deleteOrphanedCustomizations()
-            parsed.album.copy(
-                isSelected = true,
-                selectedPhotoCount = photosToSave.count { it.isSelected }
-            )
-        }
-    }
 
-    override suspend fun syncGooglePhotosAlbum(albumId: String): Result<Album> {
-        val album = albumDao.getAlbumById(albumId)
-            ?: return Result.failure(IllegalStateException("Album not found"))
-        if (album.source == AlbumSource.GOOGLE_DRIVE_FOLDER.name) {
-            return syncGoogleDriveFolder(albumId)
-        }
-        val url = album.sourceUrl
-            ?: return Result.failure(IllegalStateException("Album has no remote Google Photos URL saved"))
-
-        val parseResult = googlePhotosParser.parseAlbumUrl(url)
-        return parseResult.map { parsed ->
-            val updatedEntity = album.copy(
-                name = parsed.album.name,
-                coverUri = parsed.album.coverUri,
-                photoCount = parsed.photos.size,
-                lastSyncedAt = System.currentTimeMillis()
-            )
             val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.uri }
-            val photosToSave = parsed.photos.map { photo ->
-                val existing = existingPhotos[photo.uri]
-                val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
-                photo.toEntity().copy(
-                    cropX = customization?.cropX ?: existing?.cropX,
-                    cropY = customization?.cropY ?: existing?.cropY,
-                    zoom = customization?.zoom ?: existing?.zoom,
-                    lastDisplayedAt = existing?.lastDisplayedAt ?: 0L,
-                    isSelected = customization?.isSelected ?: existing?.isSelected ?: album.isSelected
-                )
-            }
-            albumDao.insertOrUpdate(updatedEntity)
-            photoDao.deletePhotosByAlbum(albumId)
-            photoDao.insertOrUpdateAll(photosToSave)
-            wallpaperCustomizationDao.deleteOrphanedCustomizations()
-            updatedEntity.toDomain(selectedPhotoCount = photosToSave.count { it.isSelected })
-        }
-    }
-
-    override suspend fun addGoogleDriveFolder(shareUrl: String): Result<Album> {
-        val parseResult = googleDriveParser.parseFolderUrl(shareUrl)
-        return parseResult.map { parsed ->
-            val existingPhotos = photoDao.getPhotosListByAlbum(parsed.album.id).associateBy { it.uri }
-            val photosToSave = parsed.photos.map { photo ->
+            val photosToSave = scannedTree.photos.map { photo ->
                 val existing = existingPhotos[photo.uri]
                 val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
                 photo.toEntity().copy(
@@ -245,15 +169,24 @@ class AlbumRepositoryImpl @Inject constructor(
                 )
             }
             val selectedCount = photosToSave.count { it.isSelected }
-            val albumEntity = parsed.album.toEntity().copy(isSelected = selectedCount > 0)
-            albumDao.insertOrUpdate(albumEntity)
-            photoDao.deletePhotosByAlbum(parsed.album.id)
+            val album = Album(
+                id = albumId,
+                name = scannedTree.folderName,
+                coverUri = photosToSave.firstOrNull()?.uri,
+                photoCount = photosToSave.size,
+                source = AlbumSource.GOOGLE_DRIVE_FOLDER,
+                isSelected = selectedCount > 0,
+                selectedPhotoCount = selectedCount,
+                lastSyncedAt = System.currentTimeMillis(),
+                sourceUrl = treeUri.toString()
+            )
+            albumDao.insertOrUpdate(album.toEntity())
+            photoDao.deletePhotosByAlbum(albumId)
             photoDao.insertOrUpdateAll(photosToSave)
             wallpaperCustomizationDao.deleteOrphanedCustomizations()
-            parsed.album.copy(
-                isSelected = selectedCount > 0,
-                selectedPhotoCount = selectedCount
-            )
+            Result.success(album)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -261,12 +194,13 @@ class AlbumRepositoryImpl @Inject constructor(
         val album = albumDao.getAlbumById(albumId)
             ?: return Result.failure(IllegalStateException("Album not found"))
         val url = album.sourceUrl
-            ?: return Result.failure(IllegalStateException("Album has no remote Google Drive folder URL saved"))
+            ?: return Result.failure(IllegalStateException("Album has no tree URI saved"))
+        val treeUri = Uri.parse(url)
 
-        val parseResult = googleDriveParser.parseFolderUrl(url)
-        return parseResult.map { parsed ->
+        return try {
+            val scannedTree = documentTreeScanner.scanTree(treeUri, albumId, album.name)
             val existingPhotos = photoDao.getPhotosListByAlbum(albumId).associateBy { it.uri }
-            val photosToSave = parsed.photos.map { photo ->
+            val photosToSave = scannedTree.photos.map { photo ->
                 val existing = existingPhotos[photo.uri]
                 val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
                 photo.toEntity().copy(
@@ -278,34 +212,81 @@ class AlbumRepositoryImpl @Inject constructor(
                 )
             }
             val updatedEntity = album.copy(
-                name = parsed.album.name,
-                coverUri = parsed.album.coverUri,
-                photoCount = parsed.photos.size,
+                name = scannedTree.folderName,
+                coverUri = photosToSave.firstOrNull()?.uri ?: album.coverUri,
+                photoCount = photosToSave.size,
                 lastSyncedAt = System.currentTimeMillis()
             )
             albumDao.insertOrUpdate(updatedEntity)
             photoDao.deletePhotosByAlbum(albumId)
             photoDao.insertOrUpdateAll(photosToSave)
             wallpaperCustomizationDao.deleteOrphanedCustomizations()
-            updatedEntity.toDomain(selectedPhotoCount = photosToSave.count { it.isSelected })
+            Result.success(updatedEntity.toDomain(selectedPhotoCount = photosToSave.count { it.isSelected }))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
+    }
+
+    override suspend fun importGooglePhotosFromPicker(uris: List<String>, albumName: String?): Result<Album> {
+        if (uris.isEmpty()) return Result.failure(IllegalArgumentException("No photos provided"))
+        val albumId = if (albumName != null && albumName != "Google Photos") {
+            "gp_picker_${albumName.hashCode().toUInt()}"
+        } else {
+            "google_photos_picker"
+        }
+        val existingAlbum = albumDao.getAlbumById(albumId)
+        val name = albumName ?: "Google Photos"
+        val existingPhotos = photoDao.getPhotosListByAlbum(albumId)
+        val existingUris = existingPhotos.map { it.uri }.toSet()
+        val newUris = uris.filter { it !in existingUris }
+
+        val newPhotos = newUris.mapIndexed { index, uri ->
+            val customization = wallpaperCustomizationDao.getCustomization(uri)
+            PhotoItem(
+                id = "${albumId}_${System.currentTimeMillis()}_$index",
+                albumId = albumId,
+                uri = uri,
+                width = 1920,
+                height = 1080,
+                dateAdded = System.currentTimeMillis() - (index * 1000L),
+                lastDisplayedAt = 0L,
+                cropX = customization?.cropX,
+                cropY = customization?.cropY,
+                zoom = customization?.zoom,
+                isSelected = customization?.isSelected ?: true
+            )
+        }
+
+        val allPhotos = existingPhotos.map { it.toDomain() } + newPhotos
+        val selectedCount = allPhotos.count { it.isSelected }
+        val album = Album(
+            id = albumId,
+            name = name,
+            coverUri = allPhotos.firstOrNull()?.uri,
+            photoCount = allPhotos.size,
+            source = AlbumSource.GOOGLE_PHOTOS_PICKER,
+            isSelected = true,
+            selectedPhotoCount = selectedCount,
+            lastSyncedAt = System.currentTimeMillis()
+        )
+
+        albumDao.insertOrUpdate(album.toEntity())
+        if (newPhotos.isNotEmpty()) {
+            photoDao.insertOrUpdateAll(newPhotos.map { it.toEntity() })
+        }
+        return Result.success(album)
     }
 
     override suspend fun syncCloudAlbums() {
         val selectedAlbums = albumDao.getSelectedAlbums().firstOrNull().orEmpty()
         val allAlbums = albumDao.getAllAlbums().firstOrNull().orEmpty()
-        val cloudAlbums = (selectedAlbums + allAlbums)
+        val driveAlbums = (selectedAlbums + allAlbums)
             .distinctBy { it.id }
-            .filter {
-                it.source == AlbumSource.GOOGLE_PHOTOS_SHARE.name ||
-                    it.source == AlbumSource.GOOGLE_DRIVE_FOLDER.name
-            }
+            .filter { it.source == AlbumSource.GOOGLE_DRIVE_FOLDER.name }
 
-        for (album in cloudAlbums) {
-            if (album.sourceUrl.isNullOrBlank()) continue
-            when (album.source) {
-                AlbumSource.GOOGLE_PHOTOS_SHARE.name -> syncGooglePhotosAlbum(album.id)
-                AlbumSource.GOOGLE_DRIVE_FOLDER.name -> syncGoogleDriveFolder(album.id)
+        for (album in driveAlbums) {
+            if (!album.sourceUrl.isNullOrBlank()) {
+                syncGoogleDriveFolder(album.id)
             }
         }
         wallpaperCustomizationDao.deleteOrphanedCustomizations()
@@ -346,11 +327,6 @@ class AlbumRepositoryImpl @Inject constructor(
                         )
                     )
                 }
-                AlbumSource.GOOGLE_PHOTOS_SHARE.name -> {
-                    if (!album.sourceUrl.isNullOrBlank()) {
-                        syncGooglePhotosAlbum(album.id)
-                    }
-                }
                 AlbumSource.GOOGLE_DRIVE_FOLDER.name -> {
                     if (!album.sourceUrl.isNullOrBlank()) {
                         syncGoogleDriveFolder(album.id)
@@ -380,39 +356,7 @@ class AlbumRepositoryImpl @Inject constructor(
     }
 
     override suspend fun importSharedPhotos(uris: List<String>, albumTitle: String?): Result<Album> {
-        if (uris.isEmpty()) return Result.failure(IllegalArgumentException("No photos provided"))
-        val albumId = "shared_direct"
-        val existing = albumDao.getAlbumById(albumId)
-        val name = albumTitle ?: "Shared Photos"
-        val album = Album(
-            id = albumId,
-            name = name,
-            coverUri = uris.firstOrNull(),
-            photoCount = (existing?.photoCount ?: 0) + uris.size,
-            source = AlbumSource.GOOGLE_PHOTOS_SHARE,
-            isSelected = true,
-            selectedPhotoCount = (existing?.photoCount ?: 0) + uris.size,
-            lastSyncedAt = System.currentTimeMillis()
-        )
-        val photos = uris.mapIndexed { index, uri ->
-            val customization = wallpaperCustomizationDao.getCustomization(uri)
-            PhotoItem(
-                id = "${albumId}_${System.currentTimeMillis()}_$index",
-                albumId = albumId,
-                uri = uri,
-                width = 1920,
-                height = 1080,
-                dateAdded = System.currentTimeMillis() - (index * 1000L),
-                lastDisplayedAt = 0L,
-                cropX = customization?.cropX,
-                cropY = customization?.cropY,
-                zoom = customization?.zoom,
-                isSelected = customization?.isSelected ?: true
-            )
-        }
-        albumDao.insertOrUpdate(album.toEntity())
-        photoDao.insertOrUpdateAll(photos.map { it.toEntity() })
-        return Result.success(album)
+        return importGooglePhotosFromPicker(uris, albumTitle ?: "Shared Photos")
     }
 
     private fun AlbumEntity.toDomain(

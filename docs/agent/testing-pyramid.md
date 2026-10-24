@@ -18,7 +18,7 @@
 ```
 
 ### Tier 1: Pure JVM Unit Tests
-* **Target**: State machines (`WallpaperCycleCoordinator`), ViewModels (`MainViewModel`), mathematical engines (`CropCalculation`), parsers (`GooglePhotosShareParser`).
+* **Target**: State machines (`WallpaperCycleCoordinator`), ViewModels (`MainViewModel`), mathematical engines (`CropCalculation`), scanners (`DocumentTreeScanner`).
 * **Tooling**: JUnit 4, Truth, Turbine, `kotlinx.coroutines.test.runTest`.
 * **Requirement**: Test edge cases, debounce timing, virtual time advancement, and error branches.
 

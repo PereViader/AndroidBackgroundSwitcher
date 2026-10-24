@@ -220,8 +220,9 @@ fun MainAppContent(viewModel: MainViewModel) {
                 albums = albums,
                 onToggleAlbum = { id, checked -> viewModel.toggleAlbum(id, checked) },
                 onRefresh = { viewModel.refreshAlbums() },
-                onImportGooglePhotosUrl = { url -> viewModel.importGooglePhotosAlbum(url) },
-                onSyncGooglePhotosAlbum = { id -> viewModel.syncGooglePhotosAlbum(id) },
+                onImportGoogleDriveFolder = { uri -> viewModel.importGoogleDriveFolder(uri) },
+                onImportGooglePhotos = { uris -> viewModel.importGooglePhotosFromPicker(uris) },
+                onSyncAlbum = { id -> viewModel.syncGoogleDriveFolder(id) },
                 onDeleteAlbum = { id -> viewModel.deleteAlbum(id) },
                 getPhotosForAlbum = { id -> viewModel.getPhotosForAlbum(id) },
                 onTogglePhotoSelection = { photoId, isSelected ->
