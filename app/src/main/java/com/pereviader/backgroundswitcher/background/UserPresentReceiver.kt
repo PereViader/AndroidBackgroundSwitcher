@@ -56,7 +56,7 @@ class UserPresentReceiver : BroadcastReceiver() {
                 return
             }
             val settings = getSettingsUseCase().first()
-            if (settings.isEnabled && settings.cycleOnUnlock) {
+            if (settings.cycleOnUnlock) {
                 cycleWallpaperUseCase()
             }
         }

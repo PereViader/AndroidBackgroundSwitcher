@@ -64,8 +64,15 @@ class WallpaperRepositoryImpl @Inject constructor(
 
     override suspend fun getNextCandidatePhoto(): PhotoItem? = withContext(Dispatchers.IO) {
         val settings = preferencesManager.settingsFlow.first()
+        val currentPhotoId = settings.currentPhotoId
         val entity = when (settings.rotationOrder) {
-            RotationOrder.RANDOM -> photoDao.getRandomPhoto()
+            RotationOrder.RANDOM -> {
+                if (currentPhotoId != null) {
+                    photoDao.getRandomPhotoExcluding(currentPhotoId) ?: photoDao.getRandomPhoto()
+                } else {
+                    photoDao.getRandomPhoto()
+                }
+            }
             RotationOrder.CHRONOLOGICAL -> {
                 val currentPhoto = settings.currentPhotoId?.let { photoDao.getPhotoById(it) }
                     ?: settings.currentWallpaperUri?.let { photoDao.getPhotoByUri(it) }

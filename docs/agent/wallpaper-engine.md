@@ -4,7 +4,7 @@
 The wallpaper subsystem manages transitions across several simultaneous triggers:
 * Screen unlock (`Intent.ACTION_USER_PRESENT`)
 * Screen turned on with interval elapsed (`Intent.ACTION_SCREEN_ON`)
-* Double-tap on home screen (`GestureDetector` / `onCommand` / `onTouchEvent`)
+* Double-tap on home screen (`DoubleTapDetector` / `onCommand(COMMAND_TAP)` / `onTouchEvent(ACTION_UP)`)
 * Periodic timer ticks (`drawRunnable` Handler)
 * Manual photo selection from Preview tab ("Set as Wallpaper")
 * Crop and framing edits from Preview tab

@@ -18,7 +18,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.util.Log
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -26,6 +25,7 @@ import androidx.core.animation.doOnEnd
 import com.pereviader.backgroundswitcher.core.crop.ScreenMetricsHelper
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
+import com.pereviader.backgroundswitcher.domain.coordinator.DoubleTapDetector
 import com.pereviader.backgroundswitcher.domain.coordinator.WallpaperCycleCoordinator
 import com.pereviader.backgroundswitcher.domain.repository.WallpaperRepository
 import com.pereviader.backgroundswitcher.domain.usecase.CycleWallpaperUseCase
@@ -51,8 +51,6 @@ class LiveWallpaperService : WallpaperService() {
 
     companion object {
         private const val TAG = "LiveWallpaperService"
-        private const val DOUBLE_TAP_MAX_DELAY_MILLIS = 650L
-        private const val DOUBLE_TAP_SLOP_PIXELS = 500
         private const val UNLOCK_DEBOUNCE_MILLIS = 1500L
         private const val CROSSFADE_DURATION_MILLIS = 400L
     }
@@ -66,6 +64,7 @@ class LiveWallpaperService : WallpaperService() {
         private val handler = Handler(Looper.getMainLooper())
         private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         private val coordinator = WallpaperCycleCoordinator()
+        private val doubleTapDetector = DoubleTapDetector()
         private var isVisible = false
         private var previousBitmap: Bitmap? = null
         private var currentBitmap: Bitmap? = null
@@ -77,33 +76,8 @@ class LiveWallpaperService : WallpaperService() {
         private var lastCycleAttemptTime = 0L
         private var currentSettings: WallpaperSettings = WallpaperSettings()
 
-        // Double-tap tracking
-        private var lastTapTime = 0L
-        private var lastTapX = 0
-        private var lastTapY = 0
-
         private val drawPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
         private val drawMatrix = Matrix()
-
-        private val gestureDetector = GestureDetector(
-            this@LiveWallpaperService,
-            object : GestureDetector.SimpleOnGestureListener() {
-                override fun onDoubleTap(e: MotionEvent): Boolean {
-                    Log.d(TAG, "GestureDetector.onDoubleTap triggered")
-                    if (currentSettings.doubleTapToCycle && currentSettings.isEnabled) {
-                        val now = SystemClock.elapsedRealtime()
-                        val decision = coordinator.evaluateTrigger(
-                            WallpaperCycleCoordinator.CycleTrigger.DoubleTapped,
-                            currentSettings,
-                            now
-                        )
-                        handleDecision(decision)
-                        return true
-                    }
-                    return super.onDoubleTap(e)
-                }
-            }
-        )
 
         private val drawRunnable = Runnable {
             Log.d(TAG, "drawRunnable timer fired")
@@ -210,10 +184,12 @@ class LiveWallpaperService : WallpaperService() {
         }
 
         override fun onTouchEvent(event: MotionEvent) {
-            if (event.actionMasked == MotionEvent.ACTION_UP) {
-                handleTap(event.x.toInt(), event.y.toInt(), "onTouchEvent")
+            when (event.actionMasked) {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                    val index = event.actionIndex
+                    handleTap(event.getX(index).toInt(), event.getY(index).toInt(), "onTouchEvent")
+                }
             }
-            gestureDetector.onTouchEvent(event)
             super.onTouchEvent(event)
         }
 
@@ -234,28 +210,19 @@ class LiveWallpaperService : WallpaperService() {
         }
 
         private fun handleTap(x: Int, y: Int, source: String) {
-            if (!currentSettings.isEnabled || !currentSettings.doubleTapToCycle) return
+            if (!currentSettings.doubleTapToCycle) return
             val now = SystemClock.elapsedRealtime()
-            val timeDiff = now - lastTapTime
-            val dx = x - lastTapX
-            val dy = y - lastTapY
-            val distanceSq = dx * dx + dy * dy
+            val isDoubleTap = doubleTapDetector.onUserTap(x, y, now)
+            Log.d(TAG, "handleTap ($source): isDoubleTap=$isDoubleTap, x=$x, y=$y")
 
-            Log.d(TAG, "handleTap ($source): timeDiff=${timeDiff}ms, dx=$dx, dy=$dy")
-
-            if (timeDiff in 50L..DOUBLE_TAP_MAX_DELAY_MILLIS && distanceSq <= DOUBLE_TAP_SLOP_PIXELS * DOUBLE_TAP_SLOP_PIXELS) {
+            if (isDoubleTap) {
                 Log.d(TAG, "Double-tap detected from $source! Cycling wallpaper...")
-                lastTapTime = 0L
                 val decision = coordinator.evaluateTrigger(
                     WallpaperCycleCoordinator.CycleTrigger.DoubleTapped,
                     currentSettings,
                     now
                 )
                 handleDecision(decision)
-            } else {
-                lastTapTime = now
-                lastTapX = x
-                lastTapY = y
             }
         }
 
@@ -322,6 +289,7 @@ class LiveWallpaperService : WallpaperService() {
                 unregisterReceiver(unlockReceiver)
             } catch (_: Exception) {}
             handler.removeCallbacks(drawRunnable)
+            doubleTapDetector.reset()
             transitionJob?.cancel()
             transitionAnimator?.let { anim ->
                 anim.removeAllListeners()
@@ -417,7 +385,7 @@ class LiveWallpaperService : WallpaperService() {
                 return
             }
             val now = SystemClock.elapsedRealtime()
-            if (now - lastCycleAttemptTime < 800L) {
+            if (now - lastCycleAttemptTime < 250L) {
                 Log.d(TAG, "cycleWallpaper ($reason) debounced")
                 return
             }

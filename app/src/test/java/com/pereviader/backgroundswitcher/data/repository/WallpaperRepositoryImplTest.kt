@@ -270,6 +270,27 @@ class WallpaperRepositoryImplTest {
     }
 
     @Test
+    fun `getNextCandidatePhoto with random order excludes current photo when currentPhotoId is set`() = runTest {
+        val nextPhoto = PhotoEntity(
+            id = "photo_random",
+            albumId = "album_1",
+            uri = "content://random"
+        )
+        val settings = WallpaperSettings(
+            rotationOrder = RotationOrder.RANDOM,
+            currentPhotoId = "photo_current"
+        )
+        coEvery { preferencesManager.settingsFlow } returns flowOf(settings)
+        coEvery { photoDao.getRandomPhotoExcluding("photo_current") } returns nextPhoto
+
+        val result = repository.getNextCandidatePhoto()
+
+        assert(result?.id == "photo_random")
+        coVerify { photoDao.getRandomPhotoExcluding("photo_current") }
+        coVerify(exactly = 0) { photoDao.getRandomPhoto() }
+    }
+
+    @Test
     fun `setPhotoAsWallpaper when live wallpaper is active marks photo displayed without setting static bitmap`() = runTest {
         val photoEntity = PhotoEntity(
             id = "photo_selected",

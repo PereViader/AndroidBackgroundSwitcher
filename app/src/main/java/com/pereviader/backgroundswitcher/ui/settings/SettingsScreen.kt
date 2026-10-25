@@ -1,8 +1,6 @@
 package com.pereviader.backgroundswitcher.ui.settings
 
-import android.app.WallpaperManager
-import android.content.ComponentName
-import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -13,37 +11,38 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Wallpaper
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pereviader.backgroundswitcher.core.model.RotationOrder
 import com.pereviader.backgroundswitcher.core.model.TargetScreen
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
-import com.pereviader.backgroundswitcher.core.wallpaper.LiveWallpaperService
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     settings: WallpaperSettings,
@@ -53,8 +52,43 @@ fun SettingsScreen(
     onActivateLiveWallpaper: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
+    var showAutoCycleScreen by rememberSaveable { mutableStateOf(false) }
 
+    BackHandler(enabled = showAutoCycleScreen) {
+        showAutoCycleScreen = false
+    }
+
+    if (showAutoCycleScreen) {
+        AutoCycleSettingsScreen(
+            settings = settings,
+            onUpdateSettings = onUpdateSettings,
+            onNavigateBack = { showAutoCycleScreen = false },
+            modifier = modifier
+        )
+    } else {
+        MainSettingsContent(
+            settings = settings,
+            isLiveWallpaperActive = isLiveWallpaperActive,
+            onUpdateSettings = onUpdateSettings,
+            onTriggerCycleNow = onTriggerCycleNow,
+            onActivateLiveWallpaper = onActivateLiveWallpaper,
+            onOpenAutoCycle = { showAutoCycleScreen = true },
+            modifier = modifier
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MainSettingsContent(
+    settings: WallpaperSettings,
+    isLiveWallpaperActive: Boolean,
+    onUpdateSettings: (WallpaperSettings) -> Unit,
+    onTriggerCycleNow: () -> Unit,
+    onActivateLiveWallpaper: () -> Unit,
+    onOpenAutoCycle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -64,7 +98,7 @@ fun SettingsScreen(
     ) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
 
-        // Live Wallpaper Mode Status Banner
+        // Live Wallpaper Mode Status Card at top
         if (isLiveWallpaperActive) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -84,19 +118,12 @@ fun SettingsScreen(
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Live Wallpaper Mode: Active",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = "Double-tap to cycle, screen unlock cycling & 10s rotation are fully enabled.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                        )
-                    }
+                    Text(
+                        text = "Live Wallpaper: Active",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
         } else {
@@ -104,7 +131,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
                 Column(
@@ -114,33 +141,23 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.Default.Wallpaper,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Static Wallpaper Mode",
+                            text = "Live Wallpaper: Not Active",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Double-tap to cycle, screen unlock rotation, and 10-second timers require Live Wallpaper mode.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     FilledTonalButton(
                         onClick = onActivateLiveWallpaper,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Activate Live Wallpaper Mode")
+                        Text("Set as Live Wallpaper")
                     }
                 }
             }
@@ -189,8 +206,9 @@ fun SettingsScreen(
             }
         }
 
-        // Enable / Disable Master Toggle
+        // Automatic Wallpaper Cycling (Enters nested screen)
         Card(
+            onClick = onOpenAutoCycle,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -205,14 +223,20 @@ fun SettingsScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Automatic Wallpaper Cycling", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Rotate wallpapers automatically in the background",
+                        text = if (settings.isEnabled) {
+                            "On • ${getIntervalLabel(settings.intervalSeconds)}"
+                        } else {
+                            "Off"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
-                    checked = settings.isEnabled,
-                    onCheckedChange = { onUpdateSettings(settings.copy(isEnabled = it)) }
+                Spacer(modifier = Modifier.width(12.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Configure automatic wallpaper cycling",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -270,114 +294,6 @@ fun SettingsScreen(
                     checked = settings.doubleTapToCycle,
                     onCheckedChange = { onUpdateSettings(settings.copy(doubleTapToCycle = it)) }
                 )
-            }
-        }
-
-        // Activate Live Wallpaper Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f))
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Wallpaper,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Live Wallpaper Activation", style = MaterialTheme.typography.titleMedium)
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Set Background Switcher as your system Live Wallpaper to enable double-tap gestures and smooth unlock cycling.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                FilledTonalButton(
-                    onClick = {
-                        try {
-                            val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
-                                putExtra(
-                                    WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
-                                    ComponentName(context, LiveWallpaperService::class.java)
-                                )
-                            }
-                            context.startActivity(intent)
-                        } catch (_: Exception) {
-                            try {
-                                context.startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
-                            } catch (_: Exception) {
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Set as System Live Wallpaper")
-                }
-            }
-        }
-
-        // Interval Setting
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Change Interval", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "How often to switch to a new photo",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val intervals = listOf(
-                    10L to "10 sec",
-                    900L to "15 min",
-                    1800L to "30 min",
-                    3600L to "1 hour",
-                    21600L to "6 hours",
-                    86400L to "24 hours"
-                )
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    intervals.forEach { (seconds, label) ->
-                        FilterChip(
-                            selected = settings.intervalSeconds == seconds,
-                            onClick = {
-                                onUpdateSettings(
-                                    settings.copy(
-                                        intervalSeconds = seconds,
-                                        intervalMinutes = kotlin.math.max(1L, seconds / 60L)
-                                    )
-                                )
-                            },
-                            label = { Text(label) }
-                        )
-                    }
-                }
-
-                if (settings.intervalSeconds == 10L) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "⚡ 10-second auto-rotation active (requires Live Wallpaper mode)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
             }
         }
 
@@ -476,27 +392,135 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
 
-        // "Cover" Aspect Ratio Info Card
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AutoCycleSettingsScreen(
+    settings: WallpaperSettings,
+    onUpdateSettings: (WallpaperSettings) -> Unit,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back"
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Automatic Cycling",
+                style = MaterialTheme.typography.titleLarge
+            )
+        }
+
+        // Turn on/off toggle
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            )
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Centered Cover Fit Active",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "All images automatically preserve their native aspect ratio and are scaled symmetrically to cover the full phone screen without letterboxing.",
-                    style = MaterialTheme.typography.bodySmall
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Automatic Wallpaper Cycling", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Rotate wallpapers automatically based on a timer",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = settings.isEnabled,
+                    onCheckedChange = { onUpdateSettings(settings.copy(isEnabled = it)) }
                 )
             }
         }
+
+        // Extra options when on
+        if (settings.isEnabled) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Change Interval", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "How often to switch to a new photo",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val intervals = listOf(
+                        10L to "10 sec",
+                        900L to "15 min",
+                        1800L to "30 min",
+                        3600L to "1 hour",
+                        21600L to "6 hours",
+                        86400L to "24 hours"
+                    )
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        intervals.forEach { (seconds, label) ->
+                            FilterChip(
+                                selected = settings.intervalSeconds == seconds,
+                                onClick = {
+                                    onUpdateSettings(
+                                        settings.copy(
+                                            intervalSeconds = seconds,
+                                            intervalMinutes = kotlin.math.max(1L, seconds / 60L)
+                                        )
+                                    )
+                                },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+
+                    if (settings.intervalSeconds == 10L) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "⚡ 10-second auto-rotation active (requires Live Wallpaper mode)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
     }
+}
+
+private fun getIntervalLabel(seconds: Long): String = when (seconds) {
+    10L -> "10 sec"
+    900L -> "15 min"
+    1800L -> "30 min"
+    3600L -> "1 hour"
+    21600L -> "6 hours"
+    86400L -> "24 hours"
+    else -> "${seconds / 60} min"
 }

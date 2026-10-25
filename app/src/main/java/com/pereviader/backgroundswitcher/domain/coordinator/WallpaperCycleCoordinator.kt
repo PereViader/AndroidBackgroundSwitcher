@@ -81,7 +81,7 @@ class WallpaperCycleCoordinator(
                 if (!trigger.isVisible) {
                     return CycleDecision.Ignored("surface_hidden")
                 }
-                if (pendingUnlockCycle && settings.isEnabled && settings.cycleOnUnlock) {
+                if (pendingUnlockCycle && settings.cycleOnUnlock) {
                     pendingUnlockCycle = false
                     if (!isCycling) {
                         return CycleDecision.RequestNextPhoto(reason = "pending_unlock", animate = (activePhoto != null))
@@ -102,7 +102,7 @@ class WallpaperCycleCoordinator(
             }
 
             is CycleTrigger.ScreenUnlocked -> {
-                if (!settings.isEnabled || !settings.cycleOnUnlock) {
+                if (!settings.cycleOnUnlock) {
                     return CycleDecision.Ignored("unlock_cycling_disabled")
                 }
                 if (lastUnlockCycleTime > 0L && (nowMillis - lastUnlockCycleTime < unlockDebounceMillis)) {
@@ -150,7 +150,7 @@ class WallpaperCycleCoordinator(
             }
 
             is CycleTrigger.DoubleTapped -> {
-                if (!settings.isEnabled || !settings.doubleTapToCycle) {
+                if (!settings.doubleTapToCycle) {
                     return CycleDecision.Ignored("double_tap_disabled")
                 }
                 if (isCycling) {

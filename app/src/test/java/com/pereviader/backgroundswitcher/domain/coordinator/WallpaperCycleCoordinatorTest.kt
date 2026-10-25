@@ -89,6 +89,28 @@ class WallpaperCycleCoordinatorTest {
     }
 
     @Test
+    fun `screen unlock triggers request next photo even when automatic cycling isEnabled is false`() {
+        coordinator.evaluateTrigger(
+            WallpaperCycleCoordinator.CycleTrigger.SurfaceVisibilityChanged(isVisible = true),
+            defaultSettings,
+            nowMillis = 1000L
+        )
+        coordinator.onTransitionCompleted(samplePhoto1, nowMillis = 1000L)
+
+        val disabledTimerSettings = defaultSettings.copy(isEnabled = false, cycleOnUnlock = true)
+        val decision = coordinator.evaluateTrigger(
+            WallpaperCycleCoordinator.CycleTrigger.ScreenUnlocked(isSurfaceVisible = true),
+            disabledTimerSettings,
+            nowMillis = 2000L
+        )
+
+        assertThat(decision).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto::class.java)
+        val request = decision as WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto
+        assertThat(request.reason).isEqualTo("user_present")
+        assertThat(request.animate).isTrue()
+    }
+
+    @Test
     fun `screen unlock is debounced if subsequent unlock occurs within debounce window`() {
         coordinator.evaluateTrigger(
             WallpaperCycleCoordinator.CycleTrigger.SurfaceVisibilityChanged(isVisible = true),
@@ -182,6 +204,18 @@ class WallpaperCycleCoordinatorTest {
         val decision = coordinator.evaluateTrigger(
             WallpaperCycleCoordinator.CycleTrigger.DoubleTapped,
             defaultSettings,
+            nowMillis = 1000L
+        )
+        assertThat(decision).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto::class.java)
+        assertThat((decision as WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto).reason).isEqualTo("double_tap")
+    }
+
+    @Test
+    fun `double tap triggers request next photo even when automatic cycling isEnabled is false`() {
+        val disabledSettings = defaultSettings.copy(isEnabled = false, doubleTapToCycle = true)
+        val decision = coordinator.evaluateTrigger(
+            WallpaperCycleCoordinator.CycleTrigger.DoubleTapped,
+            disabledSettings,
             nowMillis = 1000L
         )
         assertThat(decision).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto::class.java)

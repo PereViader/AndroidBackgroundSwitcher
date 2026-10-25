@@ -82,6 +82,23 @@ class PhotoDaoTest {
     }
 
     @Test
+    fun `getRandomPhotoExcluding returns selected photo that is not the excluded photo`() = runTest {
+        val album = AlbumEntity(id = "album_1", name = "Album", coverUri = null, photoCount = 3, source = "LOCAL", isSelected = true)
+        albumDao.insertOrUpdate(album)
+
+        val photo1 = PhotoEntity(id = "p1", albumId = "album_1", uri = "content://1", isSelected = true)
+        val photo2 = PhotoEntity(id = "p2", albumId = "album_1", uri = "content://2", isSelected = true)
+        val photoUnselected = PhotoEntity(id = "p_unselected", albumId = "album_1", uri = "content://u", isSelected = false)
+        photoDao.insertOrUpdateAll(listOf(photo1, photo2, photoUnselected))
+
+        val resultExcluding1 = photoDao.getRandomPhotoExcluding(excludePhotoId = "p1")
+        assertThat(resultExcluding1?.id).isEqualTo("p2")
+
+        val resultExcluding2 = photoDao.getRandomPhotoExcluding(excludePhotoId = "p2")
+        assertThat(resultExcluding2?.id).isEqualTo("p1")
+    }
+
+    @Test
     fun `getNextChronologicalPhoto returns next selected photo with greater dateAdded`() = runTest {
         val album = AlbumEntity(id = "album_1", name = "Selected", coverUri = null, photoCount = 4, source = "LOCAL", isSelected = true)
         albumDao.insertOrUpdate(album)

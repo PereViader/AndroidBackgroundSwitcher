@@ -79,6 +79,14 @@ interface PhotoDao {
 
     @Query("""
         SELECT * FROM photos 
+        WHERE isSelected = 1 AND id != :excludePhotoId
+        ORDER BY RANDOM() 
+        LIMIT 1
+    """)
+    suspend fun getRandomPhotoExcluding(excludePhotoId: String): PhotoEntity?
+
+    @Query("""
+        SELECT * FROM photos 
         WHERE isSelected = 1
         ORDER BY dateAdded DESC 
         LIMIT 1

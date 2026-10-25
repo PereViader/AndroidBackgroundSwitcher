@@ -70,6 +70,18 @@ class UserPresentReceiverTest {
     }
 
     @Test
+    fun `when static wallpaper is active and cycleOnUnlock is true even if isEnabled is false, triggers cycleWallpaperUseCase`() = runTest(testDispatcher) {
+        coEvery { wallpaperRepository.isLiveWallpaperActive() } returns false
+        coEvery { getSettingsUseCase() } returns flowOf(WallpaperSettings(isEnabled = false, cycleOnUnlock = true))
+        coEvery { cycleWallpaperUseCase() } returns Result.success(Unit)
+
+        receiver.processUserPresent(Intent(Intent.ACTION_USER_PRESENT))
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { cycleWallpaperUseCase() }
+    }
+
+    @Test
     fun `when live wallpaper is active, does not trigger cycleWallpaperUseCase`() = runTest(testDispatcher) {
         coEvery { wallpaperRepository.isLiveWallpaperActive() } returns true
         coEvery { getSettingsUseCase() } returns flowOf(WallpaperSettings(isEnabled = true, cycleOnUnlock = true))
