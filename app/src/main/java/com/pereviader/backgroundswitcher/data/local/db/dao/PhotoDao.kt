@@ -71,6 +71,14 @@ interface PhotoDao {
 
     @Query("""
         SELECT * FROM photos 
+        WHERE isSelected = 1 AND id != :excludePhotoId
+        ORDER BY lastDisplayedAt ASC 
+        LIMIT 1
+    """)
+    suspend fun getLeastRecentlyUsedPhotoExcluding(excludePhotoId: String): PhotoEntity?
+
+    @Query("""
+        SELECT * FROM photos 
         WHERE isSelected = 1
         ORDER BY RANDOM() 
         LIMIT 1

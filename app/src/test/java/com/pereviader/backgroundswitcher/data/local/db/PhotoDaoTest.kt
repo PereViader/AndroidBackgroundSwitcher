@@ -69,6 +69,19 @@ class PhotoDaoTest {
     }
 
     @Test
+    fun `getLeastRecentlyUsedPhotoExcluding returns oldest selected photo that is not excluded`() = runTest {
+        val album = AlbumEntity(id = "album_1", name = "Selected", coverUri = null, photoCount = 3, source = "LOCAL", isSelected = true)
+        albumDao.insertOrUpdate(album)
+
+        val photo1 = PhotoEntity(id = "p1", albumId = "album_1", uri = "content://1", lastDisplayedAt = 0L, isSelected = true)
+        val photo2 = PhotoEntity(id = "p2", albumId = "album_1", uri = "content://2", lastDisplayedAt = 0L, isSelected = true)
+        photoDao.insertOrUpdateAll(listOf(photo1, photo2))
+
+        val lruExcluding1 = photoDao.getLeastRecentlyUsedPhotoExcluding("p1")
+        assertThat(lruExcluding1?.id).isEqualTo("p2")
+    }
+
+    @Test
     fun `getRandomPhoto only returns selected photos`() = runTest {
         val album = AlbumEntity(id = "album_1", name = "Album", coverUri = null, photoCount = 2, source = "LOCAL", isSelected = false)
         albumDao.insertOrUpdate(album)

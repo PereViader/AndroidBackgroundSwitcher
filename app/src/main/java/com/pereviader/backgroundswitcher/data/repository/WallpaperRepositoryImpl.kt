@@ -25,6 +25,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -82,7 +83,13 @@ class WallpaperRepositoryImpl @Inject constructor(
                     photoDao.getOldestPhoto() ?: photoDao.getLatestPhoto()
                 }
             }
-            RotationOrder.LEAST_RECENTLY_USED -> photoDao.getLeastRecentlyUsedPhoto()
+            RotationOrder.LEAST_RECENTLY_USED -> {
+                if (currentPhotoId != null) {
+                    photoDao.getLeastRecentlyUsedPhotoExcluding(currentPhotoId) ?: photoDao.getLeastRecentlyUsedPhoto()
+                } else {
+                    photoDao.getLeastRecentlyUsedPhoto()
+                }
+            }
         }
 
         entity?.let {
@@ -153,37 +160,41 @@ class WallpaperRepositoryImpl @Inject constructor(
         return wallpaperManagerHelper.setWallpaper(bitmap, settings.targetScreen)
     }
 
-    override suspend fun markPhotoDisplayed(photoId: String) {
+    override suspend fun markPhotoDisplayed(photoId: String) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        photoDao.updateLastDisplayed(photoId, now)
         val photo = photoDao.getPhotoById(photoId)
         preferencesManager.updateLastRotated(now, photo?.uri, photoId)
+        photoDao.updateLastDisplayed(photoId, now)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    override fun getCurrentPhoto(): Flow<PhotoItem?> = preferencesManager.settingsFlow.flatMapLatest { settings ->
-        when {
-            settings.currentPhotoId != null -> photoDao.observePhotoById(settings.currentPhotoId)
-            settings.currentWallpaperUri != null -> photoDao.observePhotoByUri(settings.currentWallpaperUri)
-            else -> flowOf(null)
+    override fun getCurrentPhoto(): Flow<PhotoItem?> = preferencesManager.settingsFlow
+        .map { it.currentPhotoId to it.currentWallpaperUri }
+        .distinctUntilChanged()
+        .flatMapLatest { (currentPhotoId, currentWallpaperUri) ->
+            when {
+                currentPhotoId != null -> photoDao.observePhotoById(currentPhotoId).distinctUntilChanged()
+                currentWallpaperUri != null -> photoDao.observePhotoByUri(currentWallpaperUri).distinctUntilChanged()
+                else -> flowOf(null)
+            }
+        }.map { entity ->
+            entity?.let {
+                PhotoItem(
+                    id = it.id,
+                    albumId = it.albumId,
+                    uri = it.uri,
+                    width = it.width,
+                    height = it.height,
+                    dateAdded = it.dateAdded,
+                    lastDisplayedAt = it.lastDisplayedAt,
+                    cropX = it.cropX,
+                    cropY = it.cropY,
+                    zoom = it.zoom,
+                    isSelected = it.isSelected
+                )
+            }
         }
-    }.map { entity ->
-        entity?.let {
-            PhotoItem(
-                id = it.id,
-                albumId = it.albumId,
-                uri = it.uri,
-                width = it.width,
-                height = it.height,
-                dateAdded = it.dateAdded,
-                lastDisplayedAt = it.lastDisplayedAt,
-                cropX = it.cropX,
-                cropY = it.cropY,
-                zoom = it.zoom,
-                isSelected = it.isSelected
-            )
-        }
-    }
+        .distinctUntilChanged()
 
     override suspend fun updatePhotoCrop(photoId: String, cropX: Float?, cropY: Float?) {
         updatePhotoCustomization(photoId, cropX, cropY, null)

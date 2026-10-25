@@ -48,7 +48,6 @@ class DoubleTapDetector(
             (timeSinceAnyTap < DUPLICATE_WINDOW_MILLIS && distSqAny <= DUPLICATE_SLOP_PIXELS * DUPLICATE_SLOP_PIXELS)
 
         if (isDuplicate) {
-            lastAnyTapTime = nowMillis
             return false
         }
 

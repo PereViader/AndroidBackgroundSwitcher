@@ -1,6 +1,5 @@
 package com.pereviader.backgroundswitcher.core.wallpaper
 
-import android.animation.ValueAnimator
 import android.app.WallpaperManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -20,22 +19,18 @@ import android.service.wallpaper.WallpaperService
 import android.util.Log
 import android.view.MotionEvent
 import android.view.SurfaceHolder
-import android.view.animation.AccelerateDecelerateInterpolator
-import androidx.core.animation.doOnEnd
 import com.pereviader.backgroundswitcher.core.crop.ScreenMetricsHelper
-import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 import com.pereviader.backgroundswitcher.domain.coordinator.DoubleTapDetector
 import com.pereviader.backgroundswitcher.domain.coordinator.WallpaperCycleCoordinator
+import com.pereviader.backgroundswitcher.domain.coordinator.WallpaperTransitionManager
 import com.pereviader.backgroundswitcher.domain.repository.WallpaperRepository
 import com.pereviader.backgroundswitcher.domain.usecase.CycleWallpaperUseCase
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.math.max
@@ -51,7 +46,6 @@ class LiveWallpaperService : WallpaperService() {
 
     companion object {
         private const val TAG = "LiveWallpaperService"
-        private const val UNLOCK_DEBOUNCE_MILLIS = 1500L
         private const val CROSSFADE_DURATION_MILLIS = 400L
     }
 
@@ -65,15 +59,21 @@ class LiveWallpaperService : WallpaperService() {
         private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         private val coordinator = WallpaperCycleCoordinator()
         private val doubleTapDetector = DoubleTapDetector()
-        private var isVisible = false
-        private var previousBitmap: Bitmap? = null
-        private var currentBitmap: Bitmap? = null
-        private var transitionAlpha = 255
-        private var transitionAnimator: ValueAnimator? = null
-        private var transitionJob: Job? = null
-        private var surfaceWidth = 0
-        private var surfaceHeight = 0
-        private var lastCycleAttemptTime = 0L
+        private val crossfadeRunner = ValueAnimatorCrossfadeRunner(CROSSFADE_DURATION_MILLIS)
+        private val transitionManager = WallpaperTransitionManager(
+            scope = engineScope,
+            wallpaperRepository = wallpaperRepository,
+            coordinator = coordinator,
+            crossfadeRunner = crossfadeRunner,
+            fallbackDimensionsProvider = {
+                val dims = ScreenMetricsHelper.getScreenDimensions(this@LiveWallpaperService)
+                dims.width to dims.height
+            },
+            clock = { SystemClock.elapsedRealtime() },
+            onFrameUpdated = { frame -> drawFrame(frame) },
+            onScheduleNextCycle = { customDelayMillis -> scheduleNextCycle(customDelayMillis) }
+        )
+
         private var currentSettings: WallpaperSettings = WallpaperSettings()
 
         private val drawPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
@@ -81,13 +81,10 @@ class LiveWallpaperService : WallpaperService() {
 
         private val drawRunnable = Runnable {
             Log.d(TAG, "drawRunnable timer fired")
-            val now = SystemClock.elapsedRealtime()
-            val decision = coordinator.evaluateTrigger(
+            transitionManager.onTrigger(
                 WallpaperCycleCoordinator.CycleTrigger.TimerFired,
-                currentSettings,
-                now
+                currentSettings
             )
-            handleDecision(decision)
         }
 
         // Dynamic receiver for screen unlock & screen on events
@@ -97,41 +94,21 @@ class LiveWallpaperService : WallpaperService() {
                 val now = SystemClock.elapsedRealtime()
                 when (intent?.action) {
                     Intent.ACTION_USER_PRESENT -> {
-                        val decision = coordinator.evaluateTrigger(
-                            WallpaperCycleCoordinator.CycleTrigger.ScreenUnlocked(isSurfaceVisible = isVisible),
+                        transitionManager.onTrigger(
+                            WallpaperCycleCoordinator.CycleTrigger.ScreenUnlocked(
+                                isSurfaceVisible = coordinator.isSurfaceVisible
+                            ),
                             currentSettings,
                             now
                         )
-                        handleDecision(decision)
                     }
                     Intent.ACTION_SCREEN_ON -> {
-                        val decision = coordinator.evaluateTrigger(
+                        transitionManager.onTrigger(
                             WallpaperCycleCoordinator.CycleTrigger.ScreenTurnedOn(now),
                             currentSettings,
                             now
                         )
-                        handleDecision(decision)
                     }
-                }
-            }
-        }
-
-        private fun handleDecision(decision: WallpaperCycleCoordinator.CycleDecision) {
-            when (decision) {
-                is WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto -> {
-                    cycleWallpaper(decision.reason, decision.animate)
-                }
-                is WallpaperCycleCoordinator.CycleDecision.TransitionTo -> {
-                    transitionToPhoto(decision.targetPhoto, decision.reason, decision.animate)
-                }
-                is WallpaperCycleCoordinator.CycleDecision.ScheduleNextTimer -> {
-                    scheduleNextCycle(decision.delayMillis)
-                }
-                is WallpaperCycleCoordinator.CycleDecision.SkipAlreadyCycling -> {
-                    Log.d(TAG, "Cycle skipped: already cycling")
-                }
-                is WallpaperCycleCoordinator.CycleDecision.Ignored -> {
-                    Log.d(TAG, "Cycle ignored: ${decision.reason}")
                 }
             }
         }
@@ -170,15 +147,7 @@ class LiveWallpaperService : WallpaperService() {
             // Sync with external photo selections (e.g. from Preview screen)
             engineScope.launch {
                 wallpaperRepository.getCurrentPhoto().collect { photo ->
-                    if (photo != null) {
-                        val now = SystemClock.elapsedRealtime()
-                        val decision = coordinator.evaluateTrigger(
-                            WallpaperCycleCoordinator.CycleTrigger.ExternalPhotoChanged(photo),
-                            currentSettings,
-                            now
-                        )
-                        handleDecision(decision)
-                    }
+                    transitionManager.onExternalPhotoChanged(photo, currentSettings)
                 }
             }
         }
@@ -217,41 +186,19 @@ class LiveWallpaperService : WallpaperService() {
 
             if (isDoubleTap) {
                 Log.d(TAG, "Double-tap detected from $source! Cycling wallpaper...")
-                val decision = coordinator.evaluateTrigger(
+                transitionManager.onTrigger(
                     WallpaperCycleCoordinator.CycleTrigger.DoubleTapped,
                     currentSettings,
                     now
                 )
-                handleDecision(decision)
             }
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
-            Log.d(TAG, "onVisibilityChanged: visible=$visible, was=$isVisible")
-            val transitionedToVisible = visible && !isVisible
-            isVisible = visible
-
-            val now = SystemClock.elapsedRealtime()
-            val decision = coordinator.evaluateTrigger(
-                WallpaperCycleCoordinator.CycleTrigger.SurfaceVisibilityChanged(visible),
-                currentSettings,
-                now
-            )
-            handleDecision(decision)
-
-            if (visible) {
-                scheduleNextCycle()
-                if (transitionedToVisible) {
-                    if (currentBitmap == null) {
-                        cycleWallpaper("initial_visibility")
-                    } else {
-                        drawFrame()
-                    }
-                } else {
-                    drawFrame()
-                }
-            } else {
+            Log.d(TAG, "onVisibilityChanged: visible=$visible, was=${coordinator.isSurfaceVisible}")
+            transitionManager.onVisibilityChanged(visible, currentSettings)
+            if (!visible) {
                 handler.removeCallbacks(drawRunnable)
             }
         }
@@ -264,21 +211,13 @@ class LiveWallpaperService : WallpaperService() {
         ) {
             super.onSurfaceChanged(holder, format, width, height)
             Log.d(TAG, "onSurfaceChanged: width=$width, height=$height")
-            surfaceWidth = width
-            surfaceHeight = height
-            if (isVisible) {
-                if (currentBitmap == null) {
-                    cycleWallpaper("surface_changed_initial")
-                } else {
-                    drawFrame()
-                }
-            }
+            transitionManager.onSurfaceChanged(width, height)
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder?) {
             super.onSurfaceDestroyed(holder)
             Log.d(TAG, "onSurfaceDestroyed")
-            isVisible = false
+            transitionManager.onVisibilityChanged(false, currentSettings)
             handler.removeCallbacks(drawRunnable)
         }
 
@@ -290,20 +229,13 @@ class LiveWallpaperService : WallpaperService() {
             } catch (_: Exception) {}
             handler.removeCallbacks(drawRunnable)
             doubleTapDetector.reset()
-            transitionJob?.cancel()
-            transitionAnimator?.let { anim ->
-                anim.removeAllListeners()
-                anim.cancel()
-            }
-            transitionAnimator = null
+            transitionManager.destroy()
             engineScope.cancel()
-            currentBitmap = null
-            previousBitmap = null
         }
 
         private fun scheduleNextCycle(customDelayMillis: Long? = null) {
             handler.removeCallbacks(drawRunnable)
-            if (!isVisible || !currentSettings.isEnabled || currentSettings.intervalMillis <= 0) return
+            if (!coordinator.isSurfaceVisible || !currentSettings.isEnabled || currentSettings.intervalMillis <= 0) return
 
             val intervalMillis = currentSettings.intervalMillis
             val delay = customDelayMillis ?: run {
@@ -315,107 +247,11 @@ class LiveWallpaperService : WallpaperService() {
             handler.postDelayed(drawRunnable, delay)
         }
 
-        private fun updateActiveBitmap(nextBitmap: Bitmap, animateTransition: Boolean = true) {
-            transitionAnimator?.let { anim ->
-                anim.removeAllListeners()
-                anim.cancel()
-            }
-            transitionAnimator = null
-
-            if (currentBitmap != null && animateTransition && isVisible) {
-                previousBitmap = currentBitmap
-                currentBitmap = nextBitmap
-                transitionAlpha = 0
-
-                // Render baseline frame at transitionAlpha = 0 before animator kicks off
-                drawFrame()
-
-                transitionAnimator = ValueAnimator.ofInt(0, 255).apply {
-                    duration = CROSSFADE_DURATION_MILLIS
-                    interpolator = AccelerateDecelerateInterpolator()
-                    addUpdateListener { anim ->
-                        transitionAlpha = anim.animatedValue as Int
-                        drawFrame()
-                    }
-                    doOnEnd {
-                        previousBitmap = null
-                        transitionAlpha = 255
-                        drawFrame()
-                    }
-                    start()
-                }
-            } else {
-                previousBitmap = null
-                currentBitmap = nextBitmap
-                transitionAlpha = 255
-                drawFrame()
-            }
-        }
-
-        private fun transitionToPhoto(photo: PhotoItem, reason: String, animate: Boolean = true) {
-            coordinator.onTransitionStarted(photo)
-            transitionJob?.cancel()
-            transitionJob = engineScope.launch {
-                try {
-                    val width = if (surfaceWidth > 0) surfaceWidth else ScreenMetricsHelper.getScreenDimensions(this@LiveWallpaperService).width
-                    val height = if (surfaceHeight > 0) surfaceHeight else ScreenMetricsHelper.getScreenDimensions(this@LiveWallpaperService).height
-                    Log.d(TAG, "transitionToPhoto ($reason) loading photo ${photo.id} [${width}x${height}]...")
-
-                    val bitmap = wallpaperRepository.loadAndCropBitmap(photo, width, height)
-                    if (bitmap != null) {
-                        coordinator.onTransitionCompleted(photo, SystemClock.elapsedRealtime())
-                        wallpaperRepository.markPhotoDisplayed(photo.id)
-                        Log.d(TAG, "transitionToPhoto ($reason) successfully loaded ${photo.id}, starting crossfade")
-                        updateActiveBitmap(bitmap, animateTransition = animate)
-                        scheduleNextCycle()
-                    } else {
-                        Log.w(TAG, "transitionToPhoto ($reason): Failed to load/crop bitmap for ${photo.id}")
-                        coordinator.onTransitionFailed()
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "transitionToPhoto ($reason) error", e)
-                    coordinator.onTransitionFailed()
-                }
-            }
-        }
-
-        private fun cycleWallpaper(reason: String = "", animate: Boolean = true) {
-            if (!isVisible || coordinator.isCycling) {
-                Log.d(TAG, "cycleWallpaper ($reason) skipped: isVisible=$isVisible, isCycling=${coordinator.isCycling}")
-                return
-            }
-            val now = SystemClock.elapsedRealtime()
-            if (now - lastCycleAttemptTime < 250L) {
-                Log.d(TAG, "cycleWallpaper ($reason) debounced")
-                return
-            }
-            lastCycleAttemptTime = now
-
-            engineScope.launch {
-                try {
-                    val photo = wallpaperRepository.getNextCandidatePhoto()
-                    if (photo == null) {
-                        Log.w(TAG, "cycleWallpaper ($reason): No candidate photo returned")
-                        return@launch
-                    }
-                    if (photo.id == coordinator.activePhoto?.id && currentBitmap != null &&
-                        photo.cropX == coordinator.activePhoto?.cropX &&
-                        photo.cropY == coordinator.activePhoto?.cropY &&
-                        photo.zoom == coordinator.activePhoto?.zoom
-                    ) {
-                        Log.d(TAG, "cycleWallpaper ($reason): Candidate photo ${photo.id} is already active")
-                        return@launch
-                    }
-                    transitionToPhoto(photo, reason = reason, animate = (currentBitmap != null && animate))
-                } catch (e: Exception) {
-                    Log.e(TAG, "cycleWallpaper ($reason) error", e)
-                }
-            }
-        }
-
-        private fun drawFrame() {
+        private fun drawFrame(frame: WallpaperTransitionManager.FrameState = transitionManager.frameState) {
             val holder = surfaceHolder ?: return
-            if (surfaceWidth <= 0 || surfaceHeight <= 0) return
+            val width = transitionManager.surfaceWidth
+            val height = transitionManager.surfaceHeight
+            if (width <= 0 || height <= 0) return
 
             var canvas: Canvas? = null
             try {
@@ -433,16 +269,16 @@ class LiveWallpaperService : WallpaperService() {
                     // Always clear to clean solid black to eliminate dirty swapchain buffer artifacts
                     canvas.drawColor(Color.BLACK)
 
-                    val prev = previousBitmap
-                    if (prev != null && !prev.isRecycled && transitionAlpha < 255) {
-                        drawPaint.alpha = 255
-                        drawCoverBitmap(canvas, prev, drawPaint)
+                    val prev = frame.previousBitmap
+                    if (prev != null && !prev.isRecycled && frame.transitionAlpha < WallpaperTransitionManager.MAX_ALPHA) {
+                        drawPaint.alpha = WallpaperTransitionManager.MAX_ALPHA
+                        drawCoverBitmap(canvas, prev, width, height, drawPaint)
                     }
 
-                    val curr = currentBitmap
+                    val curr = frame.currentBitmap
                     if (curr != null && !curr.isRecycled) {
-                        drawPaint.alpha = transitionAlpha
-                        drawCoverBitmap(canvas, curr, drawPaint)
+                        drawPaint.alpha = frame.transitionAlpha
+                        drawCoverBitmap(canvas, curr, width, height, drawPaint)
                     } else if (prev == null) {
                         canvas.drawColor(Color.DKGRAY)
                     }
@@ -459,7 +295,13 @@ class LiveWallpaperService : WallpaperService() {
             }
         }
 
-        private fun drawCoverBitmap(canvas: Canvas, bitmap: Bitmap, paint: Paint) {
+        private fun drawCoverBitmap(
+            canvas: Canvas,
+            bitmap: Bitmap,
+            surfaceWidth: Int,
+            surfaceHeight: Int,
+            paint: Paint
+        ) {
             if (bitmap.width == surfaceWidth && bitmap.height == surfaceHeight) {
                 canvas.drawBitmap(bitmap, 0f, 0f, paint)
             } else {

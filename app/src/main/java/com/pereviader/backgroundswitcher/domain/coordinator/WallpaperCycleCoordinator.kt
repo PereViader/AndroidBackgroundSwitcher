@@ -82,8 +82,8 @@ class WallpaperCycleCoordinator(
                     return CycleDecision.Ignored("surface_hidden")
                 }
                 if (pendingUnlockCycle && settings.cycleOnUnlock) {
-                    pendingUnlockCycle = false
                     if (!isCycling) {
+                        pendingUnlockCycle = false
                         return CycleDecision.RequestNextPhoto(reason = "pending_unlock", animate = (activePhoto != null))
                     }
                 }
@@ -208,7 +208,7 @@ class WallpaperCycleCoordinator(
         }
     }
 
-    fun onTransitionStarted(target: PhotoItem) {
+    fun onTransitionStarted(target: PhotoItem? = null) {
         isCycling = true
         targetPhoto = target
     }

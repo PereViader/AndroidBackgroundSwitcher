@@ -14,6 +14,7 @@ import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperCustomizationEntity
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -308,8 +309,31 @@ class WallpaperRepositoryImplTest {
         val result = repository.setPhotoAsWallpaper(photoItem)
 
         assert(result.isSuccess)
-        coVerify { photoDao.updateLastDisplayed("photo_selected", any()) }
-        coVerify { preferencesManager.updateLastRotated(any(), "content://selected", "photo_selected") }
+        coVerifyOrder {
+            preferencesManager.updateLastRotated(any(), "content://selected", "photo_selected")
+            photoDao.updateLastDisplayed("photo_selected", any())
+        }
         coVerify(exactly = 0) { wallpaperManagerHelper.setWallpaper(any(), any()) }
+    }
+
+    @Test
+    fun `getNextCandidatePhoto with least recently used order excludes current photo when currentPhotoId is set`() = runTest {
+        val nextPhoto = PhotoEntity(
+            id = "photo_lru",
+            albumId = "album_1",
+            uri = "content://lru"
+        )
+        val settings = WallpaperSettings(
+            rotationOrder = RotationOrder.LEAST_RECENTLY_USED,
+            currentPhotoId = "photo_current"
+        )
+        coEvery { preferencesManager.settingsFlow } returns flowOf(settings)
+        coEvery { photoDao.getLeastRecentlyUsedPhotoExcluding("photo_current") } returns nextPhoto
+
+        val result = repository.getNextCandidatePhoto()
+
+        assert(result?.id == "photo_lru")
+        coVerify { photoDao.getLeastRecentlyUsedPhotoExcluding("photo_current") }
+        coVerify(exactly = 0) { photoDao.getLeastRecentlyUsedPhoto() }
     }
 }

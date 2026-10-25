@@ -10,27 +10,33 @@ The wallpaper subsystem manages transitions across several simultaneous triggers
 * Crop and framing edits from Preview tab
 * External synchronization from WorkManager (`WallpaperCycleWorker`)
 
-## 2. Decision Flow via WallpaperCycleCoordinator
+## 2. Decision & Transactional Transition Flow via WallpaperCycleCoordinator and WallpaperTransitionManager
 
 ```mermaid
 sequenceDiagram
     participant OS as Android OS (Unlock / Tap / Timer)
     participant Engine as LiveWallpaperService.Engine
+    participant Trans as WallpaperTransitionManager
     participant Coord as WallpaperCycleCoordinator
     participant Repo as WallpaperRepository
     participant Renderer as SurfaceHolder Canvas
 
     OS->>Engine: User Present / Double Tap
-    Engine->>Coord: evaluateTrigger(trigger, settings, now)
+    Engine->>Trans: onTrigger(trigger, settings, now)
+    Trans->>Coord: evaluateTrigger(trigger, settings, now)
     alt Trigger Allowed
-        Coord-->>Engine: CycleDecision.RequestNextPhoto
-        Engine->>Coord: onTransitionStarted(target)
-        Engine->>Repo: loadAndCropBitmap(photo, width, height)
-        Repo-->>Engine: Bitmap
-        Engine->>Coord: onTransitionCompleted(photo, now)
-        Engine->>Renderer: updateActiveBitmap (ValueAnimator crossfade)
-    else Debounced or Disabled
-        Coord-->>Engine: CycleDecision.Ignored(reason)
+        Coord-->>Trans: CycleDecision.RequestNextPhoto
+        Trans->>Coord: onTransitionStarted(null)
+        Trans->>Repo: getNextCandidatePhoto()
+        Repo-->>Trans: PhotoItem
+        Trans->>Coord: onTransitionStarted(photo)
+        Trans->>Repo: loadAndCropBitmap(photo, width, height)
+        Repo-->>Trans: Bitmap
+        Trans->>Repo: markPhotoDisplayed(photo.id)
+        Trans->>Renderer: Crossfade animation (0..255 alpha)
+        Trans->>Coord: onTransitionCompleted(photo, now)
+    else Debounced or Already Cycling
+        Coord-->>Trans: CycleDecision.SkipAlreadyCycling / Ignored
     end
 ```
 

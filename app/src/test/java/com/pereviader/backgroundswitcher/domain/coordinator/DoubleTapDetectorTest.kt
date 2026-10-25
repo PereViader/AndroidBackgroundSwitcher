@@ -87,6 +87,18 @@ class DoubleTapDetectorTest {
     }
 
     @Test
+    fun `delayed duplicate IPC event does not extend duplicate window or swallow fast second physical tap`() {
+        // First physical tap at 1000ms
+        assertThat(detector.onUserTap(x = 100, y = 200, nowMillis = 1000L)).isFalse()
+
+        // Delayed IPC duplicate for first tap arrives 100ms later (at 1100ms)
+        assertThat(detector.onUserTap(x = 100, y = 200, nowMillis = 1100L)).isFalse()
+
+        // Second physical tap arrives 220ms after first physical tap (at 1220ms, which is 120ms after IPC duplicate)
+        assertThat(detector.onUserTap(x = 104, y = 204, nowMillis = 1220L)).isTrue()
+    }
+
+    @Test
     fun `duplicate event immediately following double tap is ignored and does not start new sequence`() {
         assertThat(detector.onUserTap(x = 100, y = 200, nowMillis = 1000L)).isFalse()
         assertThat(detector.onUserTap(x = 100, y = 200, nowMillis = 1350L)).isTrue()
