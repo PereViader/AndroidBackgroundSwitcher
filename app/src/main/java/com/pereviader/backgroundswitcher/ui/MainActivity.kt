@@ -238,7 +238,6 @@ fun MainAppContent(viewModel: MainViewModel) {
                 settings = settings,
                 isLiveWallpaperActive = isLiveWallpaperActive,
                 onUpdateSettings = { newSettings -> viewModel.updateSettings(newSettings) },
-                onTriggerCycleNow = { viewModel.triggerImmediateCycle() },
                 onActivateLiveWallpaper = ::openLiveWallpaperChooser,
                 modifier = Modifier.padding(innerPadding)
             )

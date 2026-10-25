@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,7 +47,6 @@ fun SettingsScreen(
     settings: WallpaperSettings,
     isLiveWallpaperActive: Boolean = false,
     onUpdateSettings: (WallpaperSettings) -> Unit,
-    onTriggerCycleNow: () -> Unit = {},
     onActivateLiveWallpaper: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -70,7 +68,6 @@ fun SettingsScreen(
             settings = settings,
             isLiveWallpaperActive = isLiveWallpaperActive,
             onUpdateSettings = onUpdateSettings,
-            onTriggerCycleNow = onTriggerCycleNow,
             onActivateLiveWallpaper = onActivateLiveWallpaper,
             onOpenAutoCycle = { showAutoCycleScreen = true },
             modifier = modifier
@@ -84,7 +81,6 @@ private fun MainSettingsContent(
     settings: WallpaperSettings,
     isLiveWallpaperActive: Boolean,
     onUpdateSettings: (WallpaperSettings) -> Unit,
-    onTriggerCycleNow: () -> Unit,
     onActivateLiveWallpaper: () -> Unit,
     onOpenAutoCycle: () -> Unit,
     modifier: Modifier = Modifier
@@ -159,49 +155,6 @@ private fun MainSettingsContent(
                     ) {
                         Text("Set as Live Wallpaper")
                     }
-                }
-            }
-        }
-
-        // Manual Wallpaper Rotation Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Manual Wallpaper Rotation",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Text(
-                        "Switch wallpaper immediately to the next enabled photo",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                FilledTonalButton(
-                    onClick = onTriggerCycleNow,
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Autorenew,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Cycle Now")
                 }
             }
         }

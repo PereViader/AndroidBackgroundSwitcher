@@ -93,6 +93,21 @@ class SettingsScreenTest {
     }
 
     @Test
+    fun `manual wallpaper rotation card and cycle now button are removed`() {
+        composeTestRule.setContent {
+            SettingsScreen(
+                settings = defaultSettings,
+                isLiveWallpaperActive = true,
+                onUpdateSettings = {}
+            )
+        }
+
+        composeTestRule.onNodeWithText("Manual Wallpaper Rotation").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Cycle Now").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Switch wallpaper immediately to the next enabled photo").assertDoesNotExist()
+    }
+
+    @Test
     fun `clicking automatic wallpaper cycling enters nested screen, and back button returns to main settings`() {
         composeTestRule.setContent {
             SettingsScreen(
