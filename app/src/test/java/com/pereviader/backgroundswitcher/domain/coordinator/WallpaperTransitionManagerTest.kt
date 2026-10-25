@@ -641,4 +641,74 @@ class WallpaperTransitionManagerTest {
         assertThat(manager.coordinator.activePhoto).isEqualTo(photo1)
         assertThat(manager.frameState.currentBitmap).isEqualTo(bitmap1)
     }
+
+    @Test
+    fun `screen unlock transition commits immediately without running crossfade animation`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(dispatcher)
+        val crossfadeRunner = ControllableCrossfadeRunner()
+        val candidateDeferred = CompletableDeferred<PhotoItem?>()
+        val bitmapDeferred = CompletableDeferred<Bitmap?>()
+        val markedPhotoIds = mutableListOf<String>()
+        val renderedFrames = mutableListOf<WallpaperTransitionManager.FrameState>()
+        var currentTime = 1000L
+
+        var isInitialSetup = true
+        val manager = WallpaperTransitionManager(
+            scope = scope,
+            getNextCandidatePhoto = { candidateDeferred.await() },
+            getCurrentPhoto = { photo1 },
+            loadAndCropBitmap = { photo, _, _ ->
+                if (isInitialSetup && photo.id == photo1.id) bitmap1 else bitmapDeferred.await()
+            },
+            markPhotoDisplayed = { id -> markedPhotoIds.add(id) },
+            crossfadeRunner = crossfadeRunner,
+            clock = { currentTime },
+            onFrameUpdated = { renderedFrames.add(it) }
+        )
+
+        manager.onSurfaceChanged(1080, 2400)
+        manager.onVisibilityChanged(true, defaultSettings, nowMillis = currentTime)
+        advanceUntilIdle()
+        isInitialSetup = false
+
+        assertThat(manager.coordinator.activePhoto).isEqualTo(photo1)
+        assertThat(manager.frameState.currentBitmap).isEqualTo(bitmap1)
+        renderedFrames.clear()
+
+        // Trigger ScreenUnlocked
+        currentTime = 5000L
+        val decision = manager.onTrigger(
+            WallpaperCycleCoordinator.CycleTrigger.ScreenUnlocked(isSurfaceVisible = true),
+            defaultSettings,
+            nowMillis = currentTime
+        )
+        assertThat(decision).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto::class.java)
+        val request = decision as WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto
+        assertThat(request.animate).isFalse()
+        runCurrent()
+
+        // Provide candidate and bitmap
+        candidateDeferred.complete(photo2)
+        runCurrent()
+        bitmapDeferred.complete(bitmap2)
+        runCurrent()
+
+        // The crossfade runner should NOT have been invoked at all!
+        assertThat(crossfadeRunner.runCount).isEqualTo(0)
+
+        // The transaction commits immediately to Idle with bitmap2 and no previous bitmap
+        assertThat(manager.transactionState).isEqualTo(WallpaperTransitionManager.TransactionState.Idle)
+        assertThat(manager.isTransitioning).isFalse()
+        assertThat(manager.coordinator.isCycling).isFalse()
+        assertThat(manager.coordinator.activePhoto).isEqualTo(photo2)
+        assertThat(manager.frameState).isEqualTo(
+            WallpaperTransitionManager.FrameState(
+                previousBitmap = null,
+                currentBitmap = bitmap2,
+                transitionAlpha = 255
+            )
+        )
+        assertThat(markedPhotoIds).containsExactly("photo_1", "photo_2").inOrder()
+    }
 }

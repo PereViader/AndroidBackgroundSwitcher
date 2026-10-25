@@ -72,7 +72,7 @@ class WallpaperCycleCoordinatorTest {
         assertThat(decision).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto::class.java)
         val request = decision as WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto
         assertThat(request.reason).isEqualTo("user_present")
-        assertThat(request.animate).isTrue()
+        assertThat(request.animate).isFalse()
     }
 
     @Test
@@ -107,7 +107,7 @@ class WallpaperCycleCoordinatorTest {
         assertThat(decision).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto::class.java)
         val request = decision as WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto
         assertThat(request.reason).isEqualTo("user_present")
-        assertThat(request.animate).isTrue()
+        assertThat(request.animate).isFalse()
     }
 
     @Test
@@ -161,8 +161,32 @@ class WallpaperCycleCoordinatorTest {
             nowMillis = 1100L
         )
         assertThat(decision2).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto::class.java)
-        assertThat((decision2 as WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto).reason).isEqualTo("pending_unlock")
+        val request = decision2 as WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto
+        assertThat(request.reason).isEqualTo("pending_unlock")
+        assertThat(request.animate).isFalse()
         assertThat(coordinator.pendingUnlockCycle).isFalse()
+    }
+
+    @Test
+    fun `screen turned on triggers non-animated request next photo when interval elapsed`() {
+        coordinator.evaluateTrigger(
+            WallpaperCycleCoordinator.CycleTrigger.SurfaceVisibilityChanged(isVisible = true),
+            defaultSettings,
+            nowMillis = 1000L
+        )
+        coordinator.onTransitionCompleted(samplePhoto1, nowMillis = 1000L)
+
+        // Interval is 15 minutes = 900,000ms
+        val decision = coordinator.evaluateTrigger(
+            WallpaperCycleCoordinator.CycleTrigger.ScreenTurnedOn(nowMillis = 1000L + defaultSettings.intervalMillis),
+            defaultSettings,
+            nowMillis = 1000L + defaultSettings.intervalMillis
+        )
+
+        assertThat(decision).isInstanceOf(WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto::class.java)
+        val request = decision as WallpaperCycleCoordinator.CycleDecision.RequestNextPhoto
+        assertThat(request.reason).isEqualTo("screen_on_interval")
+        assertThat(request.animate).isFalse()
     }
 
     @Test

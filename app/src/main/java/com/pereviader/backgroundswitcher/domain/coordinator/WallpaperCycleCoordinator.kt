@@ -84,7 +84,7 @@ class WallpaperCycleCoordinator(
                 if (pendingUnlockCycle && settings.cycleOnUnlock) {
                     if (!isCycling) {
                         pendingUnlockCycle = false
-                        return CycleDecision.RequestNextPhoto(reason = "pending_unlock", animate = (activePhoto != null))
+                        return CycleDecision.RequestNextPhoto(reason = "pending_unlock", animate = false)
                     }
                 }
                 return CycleDecision.Ignored("surface_shown_no_pending_work")
@@ -120,7 +120,7 @@ class WallpaperCycleCoordinator(
                     return CycleDecision.SkipAlreadyCycling
                 }
 
-                return CycleDecision.RequestNextPhoto(reason = "user_present", animate = (activePhoto != null))
+                return CycleDecision.RequestNextPhoto(reason = "user_present", animate = false)
             }
 
             is CycleTrigger.ScreenTurnedOn -> {
@@ -131,7 +131,7 @@ class WallpaperCycleCoordinator(
                 val intervalElapsed = (lastCycleTime > 0L) && (nowMillis - lastCycleTime >= intervalMillis)
                 if (intervalElapsed) {
                     if (isCycling) return CycleDecision.SkipAlreadyCycling
-                    return CycleDecision.RequestNextPhoto(reason = "screen_on_interval", animate = (activePhoto != null))
+                    return CycleDecision.RequestNextPhoto(reason = "screen_on_interval", animate = false)
                 }
                 return CycleDecision.Ignored("screen_on_interval_not_elapsed")
             }
