@@ -4,11 +4,15 @@ import android.net.Uri
 import com.pereviader.backgroundswitcher.core.model.Album
 import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import com.pereviader.backgroundswitcher.data.local.db.dao.AlbumDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizationDao
+import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperListDao
 import com.pereviader.backgroundswitcher.data.local.db.entity.AlbumEntity
+import com.pereviader.backgroundswitcher.data.local.db.entity.ListPhotoCrossRef
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
+import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperListEntity
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreAlbumScanner
 import com.pereviader.backgroundswitcher.data.saf.DocumentTreeScanner
 import com.pereviader.backgroundswitcher.domain.repository.AlbumRepository
@@ -16,6 +20,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
@@ -27,27 +32,53 @@ class AlbumRepositoryImpl @Inject constructor(
     private val photoDao: PhotoDao,
     private val wallpaperCustomizationDao: WallpaperCustomizationDao,
     private val mediaStoreScanner: MediaStoreAlbumScanner,
-    private val documentTreeScanner: DocumentTreeScanner
+    private val documentTreeScanner: DocumentTreeScanner,
+    private val wallpaperListDao: WallpaperListDao? = null
 ) : AlbumRepository {
 
-    override fun getAlbums(): Flow<List<Album>> {
+    override fun getAlbums(): Flow<List<Album>> = getAlbums(null)
+
+    override fun getAlbums(listId: String?): Flow<List<Album>> {
+        val crossRefsFlow = wallpaperListDao?.observeAllCrossRefs()
+            ?: flowOf(emptyList())
         return combine(
             albumDao.getAllAlbums(),
-            photoDao.observeAllPhotos().onStart { emit(emptyList()) }
-        ) { entities, allPhotos ->
+            photoDao.observeAllPhotos(),
+            crossRefsFlow
+        ) { entities, allPhotos, allCrossRefs ->
             val photosByAlbum = allPhotos.groupBy { it.albumId }
+            val isDefaultOrGlobal = listId == null || listId == WallpaperList.DEFAULT_LIST_ID
+            val hasCrossRefs = allCrossRefs.isNotEmpty()
+            val targetListPhotoIds = if (listId != null) {
+                allCrossRefs.filter { it.listId == listId }.map { it.photoId }.toSet()
+            } else {
+                allCrossRefs.map { it.photoId }.toSet()
+            }
+
             entities.map { entity ->
                 val albumPhotos = photosByAlbum[entity.id].orEmpty()
                 if (albumPhotos.isNotEmpty()) {
-                    val selectedCount = albumPhotos.count { it.isSelected }
+                    val selectedCount = if (listId != null) {
+                        if (isDefaultOrGlobal && !hasCrossRefs) {
+                            albumPhotos.count { it.isSelected }
+                        } else {
+                            albumPhotos.count { it.id in targetListPhotoIds }
+                        }
+                    } else {
+                        albumPhotos.count { it.isSelected || it.id in targetListPhotoIds }
+                    }
                     entity.toDomain(
                         isSelected = selectedCount > 0,
                         selectedPhotoCount = selectedCount
                     )
                 } else {
-                    val selectedCount = if (entity.isSelected) entity.photoCount else 0
+                    val selectedCount = if (isDefaultOrGlobal && !hasCrossRefs) {
+                        if (entity.isSelected) entity.photoCount else 0
+                    } else {
+                        0
+                    }
                     entity.toDomain(
-                        isSelected = entity.isSelected,
+                        isSelected = selectedCount > 0,
                         selectedPhotoCount = selectedCount
                     )
                 }
@@ -135,6 +166,8 @@ class AlbumRepositoryImpl @Inject constructor(
         photoDao.updateAlbumPhotosSelection(albumId, isSelected)
 
         val albumPhotos = photoDao.getPhotosListByAlbum(albumId)
+        syncDefaultListCrossRefs(albumPhotos.map { it.id }, isSelected)
+
         for (photo in albumPhotos) {
             val customization = wallpaperCustomizationDao.getCustomization(photo.uri)
             if (customization != null && customization.isSelected != isSelected) {
@@ -183,6 +216,7 @@ class AlbumRepositoryImpl @Inject constructor(
             albumDao.insertOrUpdate(album.toEntity())
             photoDao.deletePhotosByAlbum(albumId)
             photoDao.insertOrUpdateAll(photosToSave)
+            syncDefaultListCrossRefs(photosToSave.filter { it.isSelected }.map { it.id }, true)
             wallpaperCustomizationDao.deleteOrphanedCustomizations()
             Result.success(album)
         } catch (e: Exception) {
@@ -220,6 +254,7 @@ class AlbumRepositoryImpl @Inject constructor(
             albumDao.insertOrUpdate(updatedEntity)
             photoDao.deletePhotosByAlbum(albumId)
             photoDao.insertOrUpdateAll(photosToSave)
+            syncDefaultListCrossRefs(photosToSave.filter { it.isSelected }.map { it.id }, true)
             wallpaperCustomizationDao.deleteOrphanedCustomizations()
             Result.success(updatedEntity.toDomain(selectedPhotoCount = photosToSave.count { it.isSelected }))
         } catch (e: Exception) {
@@ -234,7 +269,6 @@ class AlbumRepositoryImpl @Inject constructor(
         } else {
             "google_photos_picker"
         }
-        val existingAlbum = albumDao.getAlbumById(albumId)
         val name = albumName ?: "Google Photos"
         val existingPhotos = photoDao.getPhotosListByAlbum(albumId)
         val existingUris = existingPhotos.map { it.uri }.toSet()
@@ -273,6 +307,7 @@ class AlbumRepositoryImpl @Inject constructor(
         albumDao.insertOrUpdate(album.toEntity())
         if (newPhotos.isNotEmpty()) {
             photoDao.insertOrUpdateAll(newPhotos.map { it.toEntity() })
+            syncDefaultListCrossRefs(newPhotos.filter { it.isSelected }.map { it.id }, true)
         }
         return Result.success(album)
     }
@@ -338,14 +373,32 @@ class AlbumRepositoryImpl @Inject constructor(
     }
 
     override fun getPhotosInAlbum(albumId: String): Flow<List<PhotoItem>> {
-        return photoDao.getPhotosByAlbum(albumId).map { entities ->
-            entities.map { it.toDomain() }
+        val crossRefsFlow = wallpaperListDao?.observeAllCrossRefs()?.onStart { emit(emptyList()) }
+            ?: flowOf(emptyList())
+        return combine(
+            photoDao.getPhotosByAlbum(albumId),
+            crossRefsFlow
+        ) { entities, allRefs ->
+            val listIdsByPhoto = allRefs.groupBy({ it.photoId }, { it.listId })
+            entities.map { entity ->
+                val assigned = listIdsByPhoto[entity.id]?.toSet().orEmpty()
+                entity.toDomain(assigned)
+            }
         }
     }
 
     override fun getPhotosFromSelectedAlbums(): Flow<List<PhotoItem>> {
-        return photoDao.getPhotosFromSelectedAlbums().map { entities ->
-            entities.map { it.toDomain() }
+        val crossRefsFlow = wallpaperListDao?.observeAllCrossRefs()?.onStart { emit(emptyList()) }
+            ?: flowOf(emptyList())
+        return combine(
+            photoDao.getPhotosFromSelectedAlbums(),
+            crossRefsFlow
+        ) { entities, allRefs ->
+            val listIdsByPhoto = allRefs.groupBy({ it.photoId }, { it.listId })
+            entities.map { entity ->
+                val assigned = listIdsByPhoto[entity.id]?.toSet().orEmpty()
+                entity.toDomain(assigned)
+            }
         }
     }
 
@@ -357,6 +410,32 @@ class AlbumRepositoryImpl @Inject constructor(
 
     override suspend fun importSharedPhotos(uris: List<String>, albumTitle: String?): Result<Album> {
         return importGooglePhotosFromPicker(uris, albumTitle ?: "Shared Photos")
+    }
+
+    private suspend fun syncDefaultListCrossRefs(photoIds: List<String>, isSelected: Boolean) {
+        val listDao = wallpaperListDao ?: return
+        if (photoIds.isEmpty()) return
+        listDao.insertListIgnore(
+            WallpaperListEntity(
+                id = WallpaperList.DEFAULT_LIST_ID,
+                name = WallpaperList.DEFAULT_LIST_NAME,
+                isDefault = true,
+                orderIndex = 0
+            )
+        )
+        if (isSelected) {
+            val now = System.currentTimeMillis()
+            val refs = photoIds.mapIndexed { idx, id ->
+                ListPhotoCrossRef(
+                    listId = WallpaperList.DEFAULT_LIST_ID,
+                    photoId = id,
+                    addedAt = now + idx
+                )
+            }
+            listDao.insertCrossRefs(refs)
+        } else {
+            listDao.deleteCrossRefsForPhotos(WallpaperList.DEFAULT_LIST_ID, photoIds)
+        }
     }
 
     private fun AlbumEntity.toDomain(
@@ -385,7 +464,7 @@ class AlbumRepositoryImpl @Inject constructor(
         sourceUrl = sourceUrl
     )
 
-    private fun PhotoEntity.toDomain() = PhotoItem(
+    private fun PhotoEntity.toDomain(assignedListIds: Set<String> = emptySet()) = PhotoItem(
         id = id,
         albumId = albumId,
         uri = uri,
@@ -396,7 +475,8 @@ class AlbumRepositoryImpl @Inject constructor(
         cropX = cropX,
         cropY = cropY,
         zoom = zoom,
-        isSelected = isSelected
+        isSelected = isSelected || assignedListIds.isNotEmpty(),
+        assignedListIds = assignedListIds
     )
 
     private fun PhotoItem.toEntity() = PhotoEntity(

@@ -63,6 +63,23 @@ class WorkScheduler @Inject constructor(
         )
     }
 
+    fun scheduleNextBoundaryTransition(delayMillis: Long?) {
+        if (delayMillis == null || delayMillis <= 0L) {
+            workManager.cancelUniqueWork(ScheduleBoundaryWorker.WORK_NAME)
+            return
+        }
+
+        val boundaryWork = OneTimeWorkRequestBuilder<ScheduleBoundaryWorker>()
+            .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
+            .build()
+
+        workManager.enqueueUniqueWork(
+            ScheduleBoundaryWorker.WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            boundaryWork
+        )
+    }
+
     fun triggerImmediateCycle() {
         val immediateWork = OneTimeWorkRequestBuilder<WallpaperCycleWorker>()
             .build()
@@ -77,5 +94,6 @@ class WorkScheduler @Inject constructor(
     fun cancelAll() {
         workManager.cancelUniqueWork(WallpaperCycleWorker.WORK_NAME)
         workManager.cancelUniqueWork(AlbumSyncWorker.WORK_NAME)
+        workManager.cancelUniqueWork(ScheduleBoundaryWorker.WORK_NAME)
     }
 }

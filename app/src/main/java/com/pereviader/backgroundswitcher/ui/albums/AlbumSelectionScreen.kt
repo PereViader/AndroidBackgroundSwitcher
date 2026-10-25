@@ -6,8 +6,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,13 +23,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
@@ -39,12 +45,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,12 +70,15 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.pereviader.backgroundswitcher.core.model.Album
 import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
+import com.pereviader.backgroundswitcher.ui.lists.AssignToListsDialog
 import kotlinx.coroutines.flow.Flow
 
 @Composable
@@ -83,12 +95,26 @@ fun AlbumSelectionScreen(
     onOpenAlbumInPreview: (albumId: String, photoId: String?) -> Unit = { _, _ -> },
     onImportGooglePhotosUrl: (String) -> Unit = {},
     onSyncGooglePhotosAlbum: (String) -> Unit = onSyncAlbum,
+    lists: List<WallpaperList> = listOf(
+        WallpaperList(
+            id = WallpaperList.DEFAULT_LIST_ID,
+            name = WallpaperList.DEFAULT_LIST_NAME,
+            isDefault = true
+        )
+    ),
+    workingListId: String = WallpaperList.DEFAULT_LIST_ID,
+    onSelectWorkingList: (String) -> Unit = {},
+    onSetPhotoLists: (String, Set<String>) -> Unit = { _, _ -> },
+    onSetAlbumLists: (String, Set<String>) -> Unit = { _, _ -> },
+    onCreateList: (String, (WallpaperList) -> Unit) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var showAddSourceDialog by remember { mutableStateOf(false) }
     var selectedAlbumForDetails by remember { mutableStateOf<Album?>(null) }
     var albumToDelete by remember { mutableStateOf<Album?>(null) }
+    var albumToAssignLists by remember { mutableStateOf<Album?>(null) }
+    var photoToAssignLists by remember { mutableStateOf<PhotoItem?>(null) }
 
     val driveFolderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -119,58 +145,58 @@ fun AlbumSelectionScreen(
         selectedAlbumForDetails = null
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        floatingActionButton = {
-            if (activeAlbum == null) {
-                FloatingActionButton(
-                    onClick = { showAddSourceDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.testTag("add_album_fab")
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Album")
-                }
-            }
-        }
-    ) { innerPadding ->
+    Box(
+        modifier = modifier.fillMaxSize()
+    ) {
         if (activeAlbum != null) {
             AlbumPhotosFullScreen(
                 album = activeAlbum,
                 photosFlow = getPhotosForAlbum(activeAlbum.id),
+                lists = lists,
+                workingListId = workingListId,
+                onSelectWorkingList = onSelectWorkingList,
                 onBack = { selectedAlbumForDetails = null },
                 onSelectAll = { onToggleAlbum(activeAlbum.id, true) },
                 onDeselectAll = { onToggleAlbum(activeAlbum.id, false) },
                 onTogglePhotoSelection = onTogglePhotoSelection,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
+                onOpenAssignAlbumLists = { albumToAssignLists = activeAlbum },
+                onOpenAssignPhotoLists = { photo -> photoToAssignLists = photo },
+                modifier = Modifier.fillMaxSize()
             )
         } else {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Header with Refresh Action
+                // Title at the top, matching Settings top position
+                Text(
+                    text = "Albums",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier
+                        .padding(start = 16.dp, top = 16.dp, end = 16.dp)
+                        .testTag("albums_title")
+                )
+
+                // Next line: Dropdown to select which list to edit + refresh button sharing the same line
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = "Albums (${albums.size})",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = "Tap an album to view photos • Checkbox selects for cycling",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(onClick = onRefresh) {
+                    WorkingListDropdown(
+                        lists = lists,
+                        workingListId = workingListId,
+                        onSelectWorkingList = onSelectWorkingList,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("working_list_dropdown")
+                    )
+
+                    IconButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.testTag("refresh_albums_button")
+                    ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh device albums")
                     }
                 }
@@ -189,7 +215,7 @@ fun AlbumSelectionScreen(
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
-                        contentPadding = PaddingValues(16.dp),
+                        contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 80.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
@@ -199,12 +225,24 @@ fun AlbumSelectionScreen(
                                 album = album,
                                 onToggle = { isChecked -> onToggleAlbum(album.id, isChecked) },
                                 onClick = { selectedAlbumForDetails = album },
+                                onAssignLists = { albumToAssignLists = album },
                                 onSync = { onSyncGooglePhotosAlbum(album.id) },
                                 onDelete = { albumToDelete = album }
                             )
                         }
                     }
                 }
+            }
+
+            FloatingActionButton(
+                onClick = { showAddSourceDialog = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+                    .testTag("add_album_fab")
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Album")
             }
         }
 
@@ -221,6 +259,46 @@ fun AlbumSelectionScreen(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                     )
                 }
+            )
+        }
+
+        albumToAssignLists?.let { targetAlbum ->
+            val initialIds = if (targetAlbum.isSelected) {
+                setOf(workingListId)
+            } else {
+                emptySet()
+            }
+            AssignToListsDialog(
+                title = "Assign '${targetAlbum.name}' to Lists",
+                subtitle = "Assign all ${targetAlbum.photoCount} photos in this album to selected lists:",
+                lists = lists,
+                initialSelectedListIds = initialIds,
+                onConfirm = { selectedListIds ->
+                    onSetAlbumLists(targetAlbum.id, selectedListIds)
+                },
+                onCreateList = onCreateList,
+                onDismiss = { albumToAssignLists = null }
+            )
+        }
+
+        photoToAssignLists?.let { targetPhoto ->
+            val initialIds = targetPhoto.assignedListIds.ifEmpty {
+                if (targetPhoto.isSelected && workingListId == WallpaperList.DEFAULT_LIST_ID) {
+                    setOf(workingListId)
+                } else {
+                    emptySet()
+                }
+            }
+            AssignToListsDialog(
+                title = "Assign Photo to Lists",
+                subtitle = "Select which lists should include this wallpaper:",
+                lists = lists,
+                initialSelectedListIds = initialIds,
+                onConfirm = { selectedListIds ->
+                    onSetPhotoLists(targetPhoto.id, selectedListIds)
+                },
+                onCreateList = onCreateList,
+                onDismiss = { photoToAssignLists = null }
             )
         }
 
@@ -247,6 +325,115 @@ fun AlbumSelectionScreen(
             )
         }
     }
+}
+
+@Composable
+fun WorkingListDropdown(
+    lists: List<WallpaperList>,
+    workingListId: String,
+    onSelectWorkingList: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val currentList = lists.find { it.id == workingListId }
+    val displayName = currentList?.name ?: lists.firstOrNull()?.name ?: WallpaperList.DEFAULT_LIST_NAME
+
+    Box(modifier = modifier) {
+        OutlinedCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+                .testTag("working_list_dropdown_button"),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    Text(
+                        text = "Editing list:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select List to Edit"
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.testTag("working_list_dropdown_menu")
+        ) {
+            lists.forEach { list ->
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = list.name,
+                                fontWeight = if (list.id == workingListId) FontWeight.Bold else FontWeight.Normal
+                            )
+                            if (list.photoCount > 0) {
+                                Text(
+                                    text = "(${list.photoCount})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (list.isDefault) {
+                                Text(
+                                    text = "• Default",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        onSelectWorkingList(list.id)
+                        expanded = false
+                    },
+                    modifier = Modifier
+                        .testTag("working_list_option_${list.id}")
+                        .testTag("working_list_chip_${list.id}")
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkingListSelectorBar(
+    lists: List<WallpaperList>,
+    workingListId: String,
+    onSelectWorkingList: (String) -> Unit
+) {
+    WorkingListDropdown(
+        lists = lists,
+        workingListId = workingListId,
+        onSelectWorkingList = onSelectWorkingList
+    )
 }
 
 @Composable
@@ -381,6 +568,7 @@ private fun AlbumCard(
     album: Album,
     onToggle: (Boolean) -> Unit,
     onClick: () -> Unit,
+    onAssignLists: () -> Unit,
     onSync: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -497,12 +685,28 @@ private fun AlbumCard(
                         "${album.photoCount} photos"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
                 )
 
-                if (isCloudAlbum) {
-                    Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onAssignLists,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("album_assign_lists_${album.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                            contentDescription = "Assign Album to Lists",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    if (isCloudAlbum) {
                         if (!album.sourceUrl.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.width(4.dp))
                             IconButton(
                                 onClick = onSync,
                                 modifier = Modifier
@@ -516,8 +720,8 @@ private fun AlbumCard(
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }
-                            Spacer(modifier = Modifier.width(4.dp))
                         }
+                        Spacer(modifier = Modifier.width(4.dp))
                         IconButton(
                             onClick = onDelete,
                             modifier = Modifier
@@ -538,14 +742,20 @@ private fun AlbumCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AlbumPhotosFullScreen(
     album: Album,
     photosFlow: Flow<List<PhotoItem>>,
+    lists: List<WallpaperList>,
+    workingListId: String,
+    onSelectWorkingList: (String) -> Unit,
     onBack: () -> Unit,
     onSelectAll: () -> Unit,
     onDeselectAll: () -> Unit,
     onTogglePhotoSelection: (photoId: String, isSelected: Boolean) -> Unit,
+    onOpenAssignAlbumLists: () -> Unit,
+    onOpenAssignPhotoLists: (PhotoItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val photos by photosFlow.collectAsState(initial = emptyList())
@@ -577,8 +787,19 @@ private fun AlbumPhotosFullScreen(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                IconButton(
+                    onClick = onOpenAssignAlbumLists,
+                    modifier = Modifier.testTag("assign_album_lists_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                        contentDescription = "Assign to Lists",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+
                 OutlinedButton(
                     onClick = onDeselectAll,
                     modifier = Modifier.testTag("deselect_all_button")
@@ -593,6 +814,14 @@ private fun AlbumPhotosFullScreen(
                     Text("Select All")
                 }
             }
+        }
+
+        if (lists.size > 1) {
+            WorkingListSelectorBar(
+                lists = lists,
+                workingListId = workingListId,
+                onSelectWorkingList = onSelectWorkingList
+            )
         }
 
         Box(
@@ -631,21 +860,30 @@ private fun AlbumPhotosFullScreen(
                         .testTag("album_photos_grid")
                 ) {
                     items(photos, key = { it.id }) { photo ->
+                        val isSelectedInWorkingList = if (photo.assignedListIds.isNotEmpty()) {
+                            workingListId in photo.assignedListIds
+                        } else {
+                            if (workingListId == WallpaperList.DEFAULT_LIST_ID) photo.isSelected else false
+                        }
+
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(8.dp))
                                 .border(
-                                    width = if (photo.isSelected) 2.5.dp else 1.dp,
-                                    color = if (photo.isSelected) {
+                                    width = if (isSelectedInWorkingList) 2.5.dp else 1.dp,
+                                    color = if (isSelectedInWorkingList) {
                                         MaterialTheme.colorScheme.primary
                                     } else {
                                         MaterialTheme.colorScheme.outlineVariant
                                     },
                                     shape = RoundedCornerShape(8.dp)
                                 )
-                                .clickable { onTogglePhotoSelection(photo.id, !photo.isSelected) }
+                                .combinedClickable(
+                                    onClick = { onTogglePhotoSelection(photo.id, !isSelectedInWorkingList) },
+                                    onLongClick = { onOpenAssignPhotoLists(photo) }
+                                )
                                 .testTag("album_photo_${photo.id}")
                         ) {
                             AsyncImage(
@@ -655,13 +893,13 @@ private fun AlbumPhotosFullScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .graphicsLayer {
-                                        if (!photo.isSelected) {
+                                        if (!isSelectedInWorkingList) {
                                             alpha = 0.65f
                                         }
                                     }
                             )
                             Checkbox(
-                                checked = photo.isSelected,
+                                checked = isSelectedInWorkingList,
                                 onCheckedChange = { isChecked ->
                                     onTogglePhotoSelection(photo.id, isChecked)
                                 },
@@ -669,6 +907,26 @@ private fun AlbumPhotosFullScreen(
                                     .align(Alignment.TopEnd)
                                     .testTag("photo_toggle_${photo.id}")
                             )
+
+                            if (photo.assignedListIds.size > 1) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(4.dp)
+                                        .clickable { onOpenAssignPhotoLists(photo) }
+                                        .testTag("photo_lists_badge_${photo.id}")
+                                ) {
+                                    Text(
+                                        text = "${photo.assignedListIds.size} lists",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

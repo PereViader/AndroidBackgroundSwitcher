@@ -11,5 +11,7 @@ data class PhotoItem(
     val cropX: Float? = null,
     val cropY: Float? = null,
     val zoom: Float? = null,
-    val isSelected: Boolean = false
+    val isSelected: Boolean = false,
+    val assignedListIds: Set<String> = emptySet()
 )
+

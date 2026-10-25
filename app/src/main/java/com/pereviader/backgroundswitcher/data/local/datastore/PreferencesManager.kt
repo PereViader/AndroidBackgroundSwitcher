@@ -9,7 +9,9 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.pereviader.backgroundswitcher.core.model.RotationOrder
+import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
 import com.pereviader.backgroundswitcher.core.model.TargetScreen
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +40,12 @@ class PreferencesManager internal constructor(
         val LAST_ROTATED_AT = longPreferencesKey("last_rotated_at")
         val CURRENT_WALLPAPER_URI = stringPreferencesKey("current_wallpaper_uri")
         val CURRENT_PHOTO_ID = stringPreferencesKey("current_photo_id")
+        val IS_SEPARATE_SCREENS_MODE = booleanPreferencesKey("is_separate_screens_mode")
+        val FALLBACK_LIST_ID_SHARED = stringPreferencesKey("fallback_list_id_shared")
+        val FALLBACK_LIST_ID_HOME = stringPreferencesKey("fallback_list_id_home")
+        val FALLBACK_LIST_ID_LOCK = stringPreferencesKey("fallback_list_id_lock")
+        val CURRENT_LOCK_WALLPAPER_URI = stringPreferencesKey("current_lock_wallpaper_uri")
+        val CURRENT_LOCK_PHOTO_ID = stringPreferencesKey("current_lock_photo_id")
     }
 
     val settingsFlow: Flow<WallpaperSettings> = dataStore.data.map { preferences ->
@@ -58,7 +66,13 @@ class PreferencesManager internal constructor(
             doubleTapToCycle = preferences[Keys.DOUBLE_TAP_TO_CYCLE] ?: true,
             lastRotatedAt = preferences[Keys.LAST_ROTATED_AT] ?: 0L,
             currentWallpaperUri = preferences[Keys.CURRENT_WALLPAPER_URI],
-            currentPhotoId = preferences[Keys.CURRENT_PHOTO_ID]
+            currentPhotoId = preferences[Keys.CURRENT_PHOTO_ID],
+            isSeparateScreensMode = preferences[Keys.IS_SEPARATE_SCREENS_MODE] ?: false,
+            fallbackListIdShared = preferences[Keys.FALLBACK_LIST_ID_SHARED] ?: WallpaperList.DEFAULT_LIST_ID,
+            fallbackListIdHome = preferences[Keys.FALLBACK_LIST_ID_HOME] ?: WallpaperList.DEFAULT_LIST_ID,
+            fallbackListIdLock = preferences[Keys.FALLBACK_LIST_ID_LOCK] ?: WallpaperList.DEFAULT_LIST_ID,
+            currentLockWallpaperUri = preferences[Keys.CURRENT_LOCK_WALLPAPER_URI],
+            currentLockPhotoId = preferences[Keys.CURRENT_LOCK_PHOTO_ID]
         )
     }
 
@@ -100,11 +114,33 @@ class PreferencesManager internal constructor(
         dataStore.edit { it[Keys.DOUBLE_TAP_TO_CYCLE] = enabled }
     }
 
+    suspend fun updateIsSeparateScreensMode(enabled: Boolean) {
+        dataStore.edit { it[Keys.IS_SEPARATE_SCREENS_MODE] = enabled }
+    }
+
+    suspend fun updateFallbackListId(scope: ScheduleScreenScope, listId: String) {
+        dataStore.edit {
+            when (scope) {
+                ScheduleScreenScope.SHARED -> it[Keys.FALLBACK_LIST_ID_SHARED] = listId
+                ScheduleScreenScope.HOME -> it[Keys.FALLBACK_LIST_ID_HOME] = listId
+                ScheduleScreenScope.LOCK -> it[Keys.FALLBACK_LIST_ID_LOCK] = listId
+            }
+        }
+    }
+
     suspend fun updateLastRotated(timestamp: Long, uri: String?, photoId: String? = null) {
         dataStore.edit {
             it[Keys.LAST_ROTATED_AT] = timestamp
             if (uri != null) it[Keys.CURRENT_WALLPAPER_URI] = uri
             if (photoId != null) it[Keys.CURRENT_PHOTO_ID] = photoId
+        }
+    }
+
+    suspend fun updateLastLockRotated(timestamp: Long, uri: String?, photoId: String? = null) {
+        dataStore.edit {
+            it[Keys.LAST_ROTATED_AT] = timestamp
+            if (uri != null) it[Keys.CURRENT_LOCK_WALLPAPER_URI] = uri
+            if (photoId != null) it[Keys.CURRENT_LOCK_PHOTO_ID] = photoId
         }
     }
 }

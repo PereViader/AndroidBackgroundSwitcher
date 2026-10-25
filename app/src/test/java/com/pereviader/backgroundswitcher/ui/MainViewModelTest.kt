@@ -3,8 +3,15 @@ package com.pereviader.backgroundswitcher.ui
 import com.google.common.truth.Truth.assertThat
 import com.pereviader.backgroundswitcher.background.WorkScheduler
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
+import com.pereviader.backgroundswitcher.core.model.RotationOrder
+import com.pereviader.backgroundswitcher.core.model.ScheduleRule
+import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
+import com.pereviader.backgroundswitcher.core.model.TargetScreen
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 import com.pereviader.backgroundswitcher.domain.repository.AlbumRepository
+import com.pereviader.backgroundswitcher.domain.repository.ScheduleRepository
+import com.pereviader.backgroundswitcher.domain.repository.WallpaperListRepository
 import com.pereviader.backgroundswitcher.domain.repository.WallpaperRepository
 import com.pereviader.backgroundswitcher.domain.usecase.CycleWallpaperUseCase
 import com.pereviader.backgroundswitcher.domain.usecase.GetAlbumsUseCase
@@ -45,9 +52,24 @@ class MainViewModelTest {
     private lateinit var albumRepository: AlbumRepository
     private lateinit var wallpaperRepository: WallpaperRepository
     private lateinit var workScheduler: WorkScheduler
+    private lateinit var wallpaperListRepository: WallpaperListRepository
+    private lateinit var scheduleRepository: ScheduleRepository
 
     private val activePhotoFlow = MutableStateFlow<PhotoItem?>(null)
     private val selectedPhotosFlow = MutableStateFlow<List<PhotoItem>>(emptyList())
+    private val listsFlow = MutableStateFlow<List<WallpaperList>>(
+        listOf(
+            WallpaperList(
+                id = WallpaperList.DEFAULT_LIST_ID,
+                name = WallpaperList.DEFAULT_LIST_NAME,
+                isDefault = true,
+                photoCount = 0
+            )
+        )
+    )
+    private val rulesSharedFlow = MutableStateFlow<List<ScheduleRule>>(emptyList())
+    private val rulesHomeFlow = MutableStateFlow<List<ScheduleRule>>(emptyList())
+    private val rulesLockFlow = MutableStateFlow<List<ScheduleRule>>(emptyList())
 
     @Before
     fun setUp() {
@@ -61,13 +83,21 @@ class MainViewModelTest {
         albumRepository = mockk(relaxed = true)
         wallpaperRepository = mockk(relaxed = true)
         workScheduler = mockk(relaxed = true)
+        wallpaperListRepository = mockk(relaxed = true)
+        scheduleRepository = mockk(relaxed = true)
 
+        coEvery { getAlbumsUseCase(any()) } returns flowOf(emptyList())
         coEvery { getAlbumsUseCase() } returns flowOf(emptyList())
         coEvery { getWallpaperSettingsUseCase() } returns flowOf(WallpaperSettings())
         coEvery { wallpaperRepository.getCurrentPhoto() } returns activePhotoFlow
         coEvery { albumRepository.getPhotosFromSelectedAlbums() } returns selectedPhotosFlow
         coEvery { wallpaperRepository.setPhotoAsWallpaper(any()) } returns Result.success(Unit)
         coEvery { wallpaperRepository.reapplyCurrentWallpaper() } returns Result.success(Unit)
+        coEvery { wallpaperListRepository.observeLists() } returns listsFlow
+        coEvery { wallpaperListRepository.observePhotosInList(any()) } returns selectedPhotosFlow
+        coEvery { scheduleRepository.observeRulesByScope(ScheduleScreenScope.SHARED) } returns rulesSharedFlow
+        coEvery { scheduleRepository.observeRulesByScope(ScheduleScreenScope.HOME) } returns rulesHomeFlow
+        coEvery { scheduleRepository.observeRulesByScope(ScheduleScreenScope.LOCK) } returns rulesLockFlow
     }
 
     @After
@@ -84,7 +114,9 @@ class MainViewModelTest {
             cycleWallpaperUseCase = cycleWallpaperUseCase,
             albumRepository = albumRepository,
             wallpaperRepository = wallpaperRepository,
-            workScheduler = workScheduler
+            workScheduler = workScheduler,
+            wallpaperListRepository = wallpaperListRepository,
+            scheduleRepository = scheduleRepository
         )
     }
 
@@ -95,6 +127,13 @@ class MainViewModelTest {
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.previewPhotos.collect() }
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.currentPreviewPhoto.collect() }
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.selectedPreviewPhotoIndex.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.lists.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.scheduleRulesShared.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.scheduleRulesHome.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.scheduleRulesLock.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.activeResolutionShared.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.activeResolutionHome.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.activeResolutionLock.collect() }
     }
 
     @Test
@@ -418,5 +457,135 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertThat(emittedEvents).contains(UiEvent.ShowSnackbar("Failed to update wallpaper: Disk read error"))
+    }
+
+    @Test
+    fun `createList, renameList, and deleteList delegate to wallpaperListRepository`() = runTest(testDispatcher) {
+        coEvery { wallpaperListRepository.createList("Work", TargetScreen.BOTH, RotationOrder.LEAST_RECENTLY_USED) } returns WallpaperList(id = "list_work", name = "Work")
+        coEvery { wallpaperListRepository.deleteList("list_work") } returns true
+
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        viewModel.createList("Work")
+        viewModel.renameList("list_work", "Work Focus")
+        viewModel.deleteList("list_work")
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { wallpaperListRepository.createList("Work", TargetScreen.BOTH, RotationOrder.LEAST_RECENTLY_USED) }
+        coVerify(exactly = 1) { wallpaperListRepository.renameList("list_work", "Work Focus") }
+        coVerify(exactly = 1) { wallpaperListRepository.deleteList("list_work") }
+    }
+
+    @Test
+    fun `updateListDetails delegates to wallpaperListRepository`() = runTest(testDispatcher) {
+        coEvery { wallpaperListRepository.updateList("list_work", "Work New", TargetScreen.HOME, RotationOrder.RANDOM) } returns Unit
+
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        viewModel.updateListDetails("list_work", "Work New", TargetScreen.HOME, RotationOrder.RANDOM)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { wallpaperListRepository.updateList("list_work", "Work New", TargetScreen.HOME, RotationOrder.RANDOM) }
+    }
+
+    @Test
+    fun `togglePhotoSelection when custom workingList is selected toggles photo in working list`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        viewModel.selectWorkingList("list_nature")
+        assertThat(viewModel.workingListId.value).isEqualTo("list_nature")
+
+        viewModel.togglePhotoSelection("p1", true)
+        viewModel.togglePhotoSelection("p1", false)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { wallpaperListRepository.togglePhotoInList("list_nature", "p1", true) }
+        coVerify(exactly = 1) { wallpaperListRepository.togglePhotoInList("list_nature", "p1", false) }
+    }
+
+    @Test
+    fun `setAlbumLists delegates bulk album assignment to wallpaperListRepository`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        val targetLists = setOf(WallpaperList.DEFAULT_LIST_ID, "list_work")
+        viewModel.setAlbumLists("album_1", targetLists)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { wallpaperListRepository.setAlbumLists("album_1", targetLists) }
+    }
+
+    @Test
+    fun `moveScheduleRulePriority delegates to scheduleRepository and reschedules boundary worker`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        viewModel.moveScheduleRulePriority(ScheduleScreenScope.SHARED, "r0", moveUp = false)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            scheduleRepository.moveRulePriority(ScheduleScreenScope.SHARED, "r0", false)
+        }
+        coVerify(atLeast = 1) { workScheduler.scheduleNextBoundaryTransition(any()) }
+    }
+
+    @Test
+    fun `setSeparateScreensMode initializes separate schedules and updates settings`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        viewModel.setSeparateScreensMode(true)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { scheduleRepository.initializeSeparateSchedulesFromSharedIfNeeded() }
+        coVerify(exactly = 1) {
+            updateWallpaperSettingsUseCase(match { it.isSeparateScreensMode })
+        }
+    }
+
+    @Test
+    fun `switching workingList updates albums flow and reflects selection of working list`() = runTest(testDispatcher) {
+        val albumInDefault = com.pereviader.backgroundswitcher.core.model.Album(
+            id = "album_1",
+            name = "Vacation",
+            coverUri = null,
+            photoCount = 2,
+            source = com.pereviader.backgroundswitcher.core.model.AlbumSource.LOCAL_MEDIASTORE,
+            isSelected = true,
+            selectedPhotoCount = 2
+        )
+        val albumInEmpty = albumInDefault.copy(
+            isSelected = false,
+            selectedPhotoCount = 0
+        )
+
+        coEvery { getAlbumsUseCase(WallpaperList.DEFAULT_LIST_ID) } returns flowOf(listOf(albumInDefault))
+        coEvery { getAlbumsUseCase("list_empty") } returns flowOf(listOf(albumInEmpty))
+
+        val viewModel = createViewModel()
+        subscribeAll(viewModel)
+        advanceUntilIdle()
+
+        // Initially on default list
+        assertThat(viewModel.workingListId.value).isEqualTo(WallpaperList.DEFAULT_LIST_ID)
+        assertThat(viewModel.albums.value.first().isSelected).isTrue()
+        assertThat(viewModel.albums.value.first().selectedPhotoCount).isEqualTo(2)
+
+        // Switch to empty list
+        viewModel.selectWorkingList("list_empty")
+        advanceUntilIdle()
+
+        assertThat(viewModel.workingListId.value).isEqualTo("list_empty")
+        assertThat(viewModel.albums.value.first().isSelected).isFalse()
+        assertThat(viewModel.albums.value.first().selectedPhotoCount).isEqualTo(0)
     }
 }

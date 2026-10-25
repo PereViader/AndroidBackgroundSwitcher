@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface AlbumRepository {
     fun getAlbums(): Flow<List<Album>>
+    fun getAlbums(listId: String?): Flow<List<Album>> = getAlbums()
     fun getSelectedAlbums(): Flow<List<Album>>
     suspend fun refreshDeviceAlbums()
     suspend fun toggleAlbumSelection(albumId: String, isSelected: Boolean)

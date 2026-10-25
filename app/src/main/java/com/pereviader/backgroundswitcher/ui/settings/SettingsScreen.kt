@@ -36,10 +36,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.pereviader.backgroundswitcher.core.model.RotationOrder
-import com.pereviader.backgroundswitcher.core.model.TargetScreen
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 
 @Composable
@@ -194,6 +193,46 @@ private fun MainSettingsContent(
             }
         }
 
+        // Separate Schedules for Home and Lock Screens
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("settings_separate_schedules_card"),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Separate Schedules for Home and Lock",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (settings.isSeparateScreensMode) {
+                            "Independent priority schedules for Home and Lock screens"
+                        } else {
+                            "One priority schedule controls both screens"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Switch(
+                    checked = settings.isSeparateScreensMode,
+                    onCheckedChange = { onUpdateSettings(settings.copy(isSeparateScreensMode = it)) },
+                    modifier = Modifier.testTag("settings_separate_screens_mode_switch")
+                )
+            }
+        }
+
         // Cycle on Screen Unlock Toggle
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -247,74 +286,6 @@ private fun MainSettingsContent(
                     checked = settings.doubleTapToCycle,
                     onCheckedChange = { onUpdateSettings(settings.copy(doubleTapToCycle = it)) }
                 )
-            }
-        }
-
-        // Target Screen
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Target Screen", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Where to apply the wallpaper",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TargetScreen.entries.forEach { screen ->
-                        FilterChip(
-                            selected = settings.targetScreen == screen,
-                            onClick = { onUpdateSettings(settings.copy(targetScreen = screen)) },
-                            label = {
-                                Text(
-                                    when (screen) {
-                                        TargetScreen.HOME -> "Home"
-                                        TargetScreen.LOCK -> "Lock"
-                                        TargetScreen.BOTH -> "Both"
-                                    }
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // Rotation Order
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Rotation Mode", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    RotationOrder.entries.forEach { order ->
-                        FilterChip(
-                            selected = settings.rotationOrder == order,
-                            onClick = { onUpdateSettings(settings.copy(rotationOrder = order)) },
-                            label = {
-                                Text(
-                                    when (order) {
-                                        RotationOrder.RANDOM -> "Shuffle"
-                                        RotationOrder.CHRONOLOGICAL -> "Chronological"
-                                        RotationOrder.LEAST_RECENTLY_USED -> "Least Recently Used"
-                                    }
-                                )
-                            }
-                        )
-                    }
-                }
             }
         }
 

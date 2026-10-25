@@ -24,6 +24,7 @@ import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 import com.pereviader.backgroundswitcher.domain.coordinator.DoubleTapDetector
 import com.pereviader.backgroundswitcher.domain.coordinator.WallpaperCycleCoordinator
 import com.pereviader.backgroundswitcher.domain.coordinator.WallpaperTransitionManager
+import com.pereviader.backgroundswitcher.domain.repository.ScheduleRepository
 import com.pereviader.backgroundswitcher.domain.repository.WallpaperRepository
 import com.pereviader.backgroundswitcher.domain.usecase.CycleWallpaperUseCase
 import dagger.hilt.android.AndroidEntryPoint
@@ -43,6 +44,9 @@ class LiveWallpaperService : WallpaperService() {
 
     @Inject
     lateinit var wallpaperRepository: WallpaperRepository
+
+    @Inject
+    lateinit var scheduleRepository: ScheduleRepository
 
     companion object {
         private const val TAG = "LiveWallpaperService"
@@ -85,6 +89,25 @@ class LiveWallpaperService : WallpaperService() {
                 WallpaperCycleCoordinator.CycleTrigger.TimerFired,
                 currentSettings
             )
+            if (currentSettings.isSeparateScreensMode) {
+                engineScope.launch(Dispatchers.IO) {
+                    runCatching { cycleWallpaperUseCase(forceLiveUpdate = false) }
+                }
+            }
+        }
+
+        private val boundaryRunnable = Runnable {
+            Log.d(TAG, "boundaryRunnable schedule transition fired")
+            transitionManager.onTrigger(
+                WallpaperCycleCoordinator.CycleTrigger.TimerFired,
+                currentSettings
+            )
+            if (currentSettings.isSeparateScreensMode) {
+                engineScope.launch(Dispatchers.IO) {
+                    runCatching { cycleWallpaperUseCase(forceLiveUpdate = false) }
+                }
+            }
+            scheduleNextBoundaryTimer()
         }
 
         // Dynamic receiver for screen unlock & screen on events
@@ -101,6 +124,11 @@ class LiveWallpaperService : WallpaperService() {
                             currentSettings,
                             now
                         )
+                        if (currentSettings.cycleOnUnlock && currentSettings.isSeparateScreensMode) {
+                            engineScope.launch(Dispatchers.IO) {
+                                runCatching { cycleWallpaperUseCase(forceLiveUpdate = false) }
+                            }
+                        }
                     }
                     Intent.ACTION_SCREEN_ON -> {
                         transitionManager.onTrigger(
@@ -135,11 +163,27 @@ class LiveWallpaperService : WallpaperService() {
                     val intervalChanged = currentSettings.intervalSeconds != settings.intervalSeconds ||
                         currentSettings.intervalMinutes != settings.intervalMinutes
                     val enabledChanged = currentSettings.isEnabled != settings.isEnabled
+                    val scheduleModeChanged = currentSettings.isSeparateScreensMode != settings.isSeparateScreensMode ||
+                        currentSettings.fallbackListIdShared != settings.fallbackListIdShared ||
+                        currentSettings.fallbackListIdHome != settings.fallbackListIdHome ||
+                        currentSettings.fallbackListIdLock != settings.fallbackListIdLock
                     currentSettings = settings
                     Log.d(TAG, "Settings updated: intervalSeconds=${settings.intervalSeconds}, enabled=${settings.isEnabled}, doubleTap=${settings.doubleTapToCycle}, unlock=${settings.cycleOnUnlock}")
 
                     if (intervalChanged || enabledChanged) {
                         scheduleNextCycle()
+                    }
+                    if (scheduleModeChanged || enabledChanged) {
+                        scheduleNextBoundaryTimer()
+                    }
+                }
+            }
+
+            // Observe schedule rule changes to keep boundary timer in sync
+            engineScope.launch {
+                if (::scheduleRepository.isInitialized) {
+                    scheduleRepository.observeAllRules().collect {
+                        scheduleNextBoundaryTimer()
                     }
                 }
             }
@@ -200,6 +244,9 @@ class LiveWallpaperService : WallpaperService() {
             transitionManager.onVisibilityChanged(visible, currentSettings)
             if (!visible) {
                 handler.removeCallbacks(drawRunnable)
+                handler.removeCallbacks(boundaryRunnable)
+            } else {
+                scheduleNextBoundaryTimer()
             }
         }
 
@@ -219,6 +266,7 @@ class LiveWallpaperService : WallpaperService() {
             Log.d(TAG, "onSurfaceDestroyed")
             transitionManager.onVisibilityChanged(false, currentSettings)
             handler.removeCallbacks(drawRunnable)
+            handler.removeCallbacks(boundaryRunnable)
         }
 
         override fun onDestroy() {
@@ -228,6 +276,7 @@ class LiveWallpaperService : WallpaperService() {
                 unregisterReceiver(unlockReceiver)
             } catch (_: Exception) {}
             handler.removeCallbacks(drawRunnable)
+            handler.removeCallbacks(boundaryRunnable)
             doubleTapDetector.reset()
             transitionManager.destroy()
             engineScope.cancel()
@@ -245,6 +294,17 @@ class LiveWallpaperService : WallpaperService() {
             }
             Log.d(TAG, "scheduleNextCycle: delay=${delay}ms, interval=${intervalMillis}ms")
             handler.postDelayed(drawRunnable, delay)
+        }
+
+        private fun scheduleNextBoundaryTimer() {
+            handler.removeCallbacks(boundaryRunnable)
+            if (!coordinator.isSurfaceVisible || !currentSettings.isEnabled || !::scheduleRepository.isInitialized) return
+            engineScope.launch {
+                val transition = runCatching { scheduleRepository.findNextBoundaryTransition() }.getOrNull()
+                if (transition != null && transition.delayMillis > 0L && coordinator.isSurfaceVisible) {
+                    handler.postDelayed(boundaryRunnable, transition.delayMillis)
+                }
+            }
         }
 
         private fun drawFrame(frame: WallpaperTransitionManager.FrameState = transitionManager.frameState) {

@@ -79,13 +79,13 @@ class AlbumSelectionScreenTest {
         }
 
         // Initially on albums page
-        composeTestRule.onNodeWithText("Albums (1)").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Albums").assertIsDisplayed()
 
         // Click album card to open full screen album view
         composeTestRule.onNodeWithText("Nature").performClick()
 
         // Album list header is replaced by full screen album view
-        composeTestRule.onNodeWithText("Albums (1)").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Albums").assertDoesNotExist()
         composeTestRule.onNodeWithTag("album_photos_fullscreen").assertIsDisplayed()
         composeTestRule.onNodeWithTag("album_photos_grid").assertIsDisplayed()
 
@@ -121,7 +121,7 @@ class AlbumSelectionScreenTest {
         // Going back brings back to the album page
         composeTestRule.onNodeWithText("Back").performClick()
         composeTestRule.onNodeWithTag("album_photos_fullscreen").assertDoesNotExist()
-        composeTestRule.onNodeWithText("Albums (1)").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Albums").assertIsDisplayed()
         composeTestRule.onNodeWithText("Nature").assertIsDisplayed()
     }
 
@@ -199,5 +199,107 @@ class AlbumSelectionScreenTest {
         composeTestRule.onNodeWithText("Pick from Google Photos").assertIsDisplayed()
         composeTestRule.onNodeWithTag("add_google_drive_option").assertIsDisplayed()
         composeTestRule.onNodeWithTag("pick_google_photos_option").assertIsDisplayed()
+    }
+
+    @Test
+    fun `working list chip bar switches active list and Assign to Lists button assigns album to multiple lists`() {
+        val defaultList = com.pereviader.backgroundswitcher.core.model.WallpaperList(
+            id = "default_list",
+            name = "My Wallpapers",
+            isDefault = true,
+            photoCount = 0
+        )
+        val workList = com.pereviader.backgroundswitcher.core.model.WallpaperList(
+            id = "list_work",
+            name = "Work Focus",
+            isDefault = false,
+            photoCount = 0
+        )
+        val photosFlow = MutableStateFlow(listOf(samplePhoto1, samplePhoto2))
+        var selectedWorkingListId = "default_list"
+        var assignedAlbumId: String? = null
+        var assignedListIds: Set<String>? = null
+
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = listOf(sampleAlbum),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = {},
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { photosFlow },
+                lists = listOf(defaultList, workList),
+                workingListId = selectedWorkingListId,
+                onSelectWorkingList = { selectedWorkingListId = it },
+                onSetAlbumLists = { albumId, listIds ->
+                    assignedAlbumId = albumId
+                    assignedListIds = listIds
+                }
+            )
+        }
+
+        // Open Nature album
+        composeTestRule.onNodeWithText("Nature").performClick()
+
+        // Working list dropdown can be opened and list chosen
+        composeTestRule.onNodeWithTag("working_list_dropdown_button").performClick()
+        composeTestRule.onNodeWithTag("working_list_option_list_work").performClick()
+        assertThat(selectedWorkingListId).isEqualTo("list_work")
+
+        // Click "Assign to Lists..." button and select Work Focus in dialog
+        composeTestRule.onNodeWithTag("assign_album_lists_button").performClick()
+        composeTestRule.onNodeWithTag("assign_list_row_list_work").performClick()
+        composeTestRule.onNodeWithTag("assign_lists_save_button").performClick()
+
+        assertThat(assignedAlbumId).isEqualTo("album_1")
+        assertThat(assignedListIds).contains("list_work")
+    }
+
+    @Test
+    fun `albums header displays title at top, removes tap description, and shows dropdown and refresh button sharing line`() {
+        val defaultList = com.pereviader.backgroundswitcher.core.model.WallpaperList(
+            id = "default_list",
+            name = "My Wallpapers",
+            isDefault = true
+        )
+        val workList = com.pereviader.backgroundswitcher.core.model.WallpaperList(
+            id = "list_work",
+            name = "Work Focus",
+            isDefault = false
+        )
+        var selectedList = "default_list"
+        var refreshClicked = false
+
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = listOf(sampleAlbum),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = { refreshClicked = true },
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { MutableStateFlow(emptyList()) },
+                lists = listOf(defaultList, workList),
+                workingListId = selectedList,
+                onSelectWorkingList = { selectedList = it }
+            )
+        }
+
+        // Title is displayed
+        composeTestRule.onNodeWithTag("albums_title").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Albums").assertIsDisplayed()
+
+        // Description element is removed
+        composeTestRule.onNodeWithText("Tap an album to view photos • Checkbox selects for cycling").assertDoesNotExist()
+
+        // Dropdown and refresh button are displayed
+        composeTestRule.onNodeWithTag("working_list_dropdown_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("refresh_albums_button").assertIsDisplayed()
+
+        // Refresh triggers callback
+        composeTestRule.onNodeWithTag("refresh_albums_button").performClick()
+        assertThat(refreshClicked).isTrue()
+
+        // Dropdown changes selected list
+        composeTestRule.onNodeWithTag("working_list_dropdown_button").performClick()
+        composeTestRule.onNodeWithTag("working_list_option_list_work").performClick()
+        assertThat(selectedList).isEqualTo("list_work")
     }
 }

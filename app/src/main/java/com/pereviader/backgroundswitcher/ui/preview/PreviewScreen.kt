@@ -33,15 +33,20 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -65,7 +70,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -73,9 +77,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
 import coil.imageLoader
@@ -85,6 +87,8 @@ import com.pereviader.backgroundswitcher.core.crop.CropCalculation
 import com.pereviader.backgroundswitcher.core.crop.ScreenDimensions
 import com.pereviader.backgroundswitcher.core.crop.ScreenMetricsHelper
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
+import com.pereviader.backgroundswitcher.ui.lists.AssignToListsDialog
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.max
 
@@ -102,6 +106,12 @@ fun PreviewScreen(
     onSetAsWallpaper: (PhotoItem) -> Unit = {},
     isLiveWallpaperActive: Boolean = false,
     onActivateLiveWallpaper: () -> Unit = {},
+    lists: List<WallpaperList> = emptyList(),
+    previewListId: String? = null,
+    activeScheduledListId: String? = null,
+    onSelectPreviewList: (String?) -> Unit = {},
+    onSetPhotoLists: (String, Set<String>) -> Unit = { _, _ -> },
+    onCreateList: (String, (WallpaperList) -> Unit) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -113,6 +123,8 @@ fun PreviewScreen(
     }
 
     var showActionModal by remember { mutableStateOf(false) }
+    var showAssignListsModal by remember { mutableStateOf(false) }
+    var showListSwitcherMenu by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -156,6 +168,69 @@ fun PreviewScreen(
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
+        }
+
+        if (lists.size > 1) {
+            val currentListLabel = if (previewListId == null) {
+                val activeName = lists.find { it.id == activeScheduledListId }?.name
+                    ?: WallpaperList.DEFAULT_LIST_NAME
+                "Active Schedule ($activeName)"
+            } else {
+                lists.find { it.id == previewListId }?.name ?: WallpaperList.DEFAULT_LIST_NAME
+            }
+
+            Box(modifier = Modifier.padding(bottom = 4.dp)) {
+                Surface(
+                    onClick = { showListSwitcherMenu = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.testTag("preview_list_switcher")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Collections,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "List: $currentListLabel",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = showListSwitcherMenu,
+                    onDismissRequest = { showListSwitcherMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Active Scheduled List") },
+                        onClick = {
+                            onSelectPreviewList(null)
+                            showListSwitcherMenu = false
+                        }
+                    )
+                    lists.forEach { list ->
+                        DropdownMenuItem(
+                            text = { Text("${list.name} (${list.photoCount} photos)") },
+                            onClick = {
+                                onSelectPreviewList(list.id)
+                                showListSwitcherMenu = false
+                            }
+                        )
+                    }
+                }
+            }
         }
 
         // Main Preview Card area: Maximized to take full height, zero clutter above
@@ -269,6 +344,25 @@ fun PreviewScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (lists.isNotEmpty()) {
+                        FilledTonalButton(
+                            onClick = {
+                                showActionModal = false
+                                showAssignListsModal = true
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("photo_options_assign_lists")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                                contentDescription = null
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Assign to Photo Lists...")
+                        }
+                    }
+
                     FilledTonalButton(
                         onClick = {
                             onRemovePhoto(currentPhoto.id)
@@ -296,6 +390,27 @@ fun PreviewScreen(
                     Text("Close")
                 }
             }
+        )
+    }
+
+    if (showAssignListsModal && currentPhoto != null && lists.isNotEmpty()) {
+        val initialIds = currentPhoto.assignedListIds.ifEmpty {
+            if (currentPhoto.isSelected) {
+                setOf(previewListId ?: activeScheduledListId ?: WallpaperList.DEFAULT_LIST_ID)
+            } else {
+                emptySet()
+            }
+        }
+        AssignToListsDialog(
+            title = "Assign Photo to Lists",
+            subtitle = "Choose which lists include this photo:",
+            lists = lists,
+            initialSelectedListIds = initialIds,
+            onConfirm = { targetIds ->
+                onSetPhotoLists(currentPhoto.id, targetIds)
+            },
+            onCreateList = onCreateList,
+            onDismiss = { showAssignListsModal = false }
         )
     }
 }
@@ -493,7 +608,6 @@ private fun PhotoPreviewCanvas(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        val previewWidth = constraints.maxWidth.toFloat()
         val previewHeight = constraints.maxHeight.toFloat()
         val scaleFactor = previewHeight / currentScreenDimensions.height.toFloat()
         val currentScaleFactor by rememberUpdatedState(scaleFactor)
@@ -507,7 +621,6 @@ private fun PhotoPreviewCanvas(
                         awaitFirstDown(requireUnconsumed = false)
                         val longPressTimeout = viewConfiguration.longPressTimeoutMillis
 
-                        // Check if the gesture is a stationary hold (long press)
                         var initialPan = Offset.Zero
                         var initialZoom = 1f
                         var isFingerPressed = false
@@ -530,15 +643,12 @@ private fun PhotoPreviewCanvas(
                         }
 
                         if (movementOccurred == null) {
-                            // Timed out while holding still -> trigger long press
                             currentOnLongPress()
-                            // Consume rest of touch until release
                             do {
                                 val releaseEvent = awaitPointerEvent()
                                 releaseEvent.changes.forEach { it.consume() }
                             } while (releaseEvent.changes.any { it.pressed })
                         } else if (movementOccurred) {
-                            // Standard interactive pan & pinch-to-zoom loop
                             var anyMotion = false
 
                             fun applyMotion(panDelta: Offset, zoomDelta: Float) {

@@ -9,5 +9,6 @@ class GetAlbumsUseCase @Inject constructor(
     private val albumRepository: AlbumRepository
 ) {
     operator fun invoke(): Flow<List<Album>> = albumRepository.getAlbums()
+    operator fun invoke(listId: String?): Flow<List<Album>> = albumRepository.getAlbums(listId)
     suspend fun refresh() = albumRepository.refreshDeviceAlbums()
 }

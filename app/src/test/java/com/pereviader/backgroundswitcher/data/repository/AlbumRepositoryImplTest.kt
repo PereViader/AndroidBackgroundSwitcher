@@ -5,10 +5,13 @@ import com.google.common.truth.Truth.assertThat
 import com.pereviader.backgroundswitcher.core.model.Album
 import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import com.pereviader.backgroundswitcher.data.local.db.dao.AlbumDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizationDao
+import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperListDao
 import com.pereviader.backgroundswitcher.data.local.db.entity.AlbumEntity
+import com.pereviader.backgroundswitcher.data.local.db.entity.ListPhotoCrossRef
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperCustomizationEntity
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreAlbumScanner
@@ -16,6 +19,7 @@ import com.pereviader.backgroundswitcher.data.saf.DocumentTreeScanner
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -31,6 +35,7 @@ class AlbumRepositoryImplTest {
     private lateinit var wallpaperCustomizationDao: WallpaperCustomizationDao
     private lateinit var mediaStoreScanner: MediaStoreAlbumScanner
     private lateinit var documentTreeScanner: DocumentTreeScanner
+    private lateinit var wallpaperListDao: WallpaperListDao
     private lateinit var repository: AlbumRepositoryImpl
 
     @Before
@@ -40,14 +45,17 @@ class AlbumRepositoryImplTest {
         wallpaperCustomizationDao = mockk(relaxed = true)
         mediaStoreScanner = mockk(relaxed = true)
         documentTreeScanner = mockk(relaxed = true)
+        wallpaperListDao = mockk(relaxed = true)
         coEvery { wallpaperCustomizationDao.getCustomization(any()) } returns null
+        coEvery { wallpaperListDao.observeAllCrossRefs() } returns flowOf(emptyList())
 
         repository = AlbumRepositoryImpl(
             albumDao = albumDao,
             photoDao = photoDao,
             wallpaperCustomizationDao = wallpaperCustomizationDao,
             mediaStoreScanner = mediaStoreScanner,
-            documentTreeScanner = documentTreeScanner
+            documentTreeScanner = documentTreeScanner,
+            wallpaperListDao = wallpaperListDao
         )
     }
 
@@ -360,5 +368,42 @@ class AlbumRepositoryImplTest {
             )
         }
         coVerify { wallpaperCustomizationDao.deleteOrphanedCustomizations() }
+    }
+
+    @Test
+    fun `getAlbums with listId returns album selection state scoped to that list`() = runTest {
+        val albumId = "album_1"
+        val albumEntity = AlbumEntity(
+            id = albumId,
+            name = "Vacation",
+            coverUri = "uri1",
+            photoCount = 2,
+            source = AlbumSource.LOCAL_MEDIASTORE.name,
+            isSelected = false
+        )
+        val photos = listOf(
+            PhotoEntity(id = "p1", albumId = albumId, uri = "content://media/1", isSelected = false),
+            PhotoEntity(id = "p2", albumId = albumId, uri = "content://media/2", isSelected = false)
+        )
+        // Photos are assigned to DEFAULT_LIST_ID, but not to list_empty
+        val crossRefs = listOf(
+            ListPhotoCrossRef(listId = WallpaperList.DEFAULT_LIST_ID, photoId = "p1", addedAt = 100L),
+            ListPhotoCrossRef(listId = WallpaperList.DEFAULT_LIST_ID, photoId = "p2", addedAt = 101L)
+        )
+        coEvery { albumDao.getAllAlbums() } returns flowOf(listOf(albumEntity))
+        coEvery { photoDao.observeAllPhotos() } returns flowOf(photos)
+        coEvery { wallpaperListDao.observeAllCrossRefs() } returns flowOf(crossRefs)
+
+        // Query default list: album should be selected with 2 photos
+        val defaultListAlbums = repository.getAlbums(WallpaperList.DEFAULT_LIST_ID).first()
+        assertThat(defaultListAlbums).hasSize(1)
+        assertThat(defaultListAlbums[0].isSelected).isTrue()
+        assertThat(defaultListAlbums[0].selectedPhotoCount).isEqualTo(2)
+
+        // Query list_empty: album should NOT be selected and have 0 selected photos
+        val emptyListAlbums = repository.getAlbums("list_empty").first()
+        assertThat(emptyListAlbums).hasSize(1)
+        assertThat(emptyListAlbums[0].isSelected).isFalse()
+        assertThat(emptyListAlbums[0].selectedPhotoCount).isEqualTo(0)
     }
 }

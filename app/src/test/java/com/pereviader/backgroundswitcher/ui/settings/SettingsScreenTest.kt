@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.google.common.truth.Truth.assertThat
@@ -176,5 +177,39 @@ class SettingsScreenTest {
         assertThat(updatedSettings).isNotNull()
         assertThat(updatedSettings?.intervalSeconds).isEqualTo(3600L)
         assertThat(updatedSettings?.intervalMinutes).isEqualTo(60L)
+    }
+
+    @Test
+    fun `target screen and rotation mode cards are not displayed in settings`() {
+        composeTestRule.setContent {
+            SettingsScreen(
+                settings = defaultSettings,
+                isLiveWallpaperActive = true,
+                onUpdateSettings = {}
+            )
+        }
+
+        composeTestRule.onNodeWithText("Target Screen").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Where to apply the wallpaper").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Rotation Mode").assertDoesNotExist()
+    }
+
+    @Test
+    fun `separate schedules for home and lock toggle is displayed in settings and updates settings`() {
+        var updatedSettings: WallpaperSettings? = null
+
+        composeTestRule.setContent {
+            SettingsScreen(
+                settings = defaultSettings.copy(isSeparateScreensMode = false),
+                isLiveWallpaperActive = true,
+                onUpdateSettings = { updatedSettings = it }
+            )
+        }
+
+        composeTestRule.onNodeWithText("Separate Schedules for Home and Lock").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("settings_separate_screens_mode_switch").performClick()
+
+        assertThat(updatedSettings).isNotNull()
+        assertThat(updatedSettings?.isSeparateScreensMode).isTrue()
     }
 }

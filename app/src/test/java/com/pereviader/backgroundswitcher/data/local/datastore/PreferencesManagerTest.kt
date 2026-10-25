@@ -3,6 +3,7 @@ package com.pereviader.backgroundswitcher.data.local.datastore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
 import com.pereviader.backgroundswitcher.core.model.RotationOrder
+import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
 import com.pereviader.backgroundswitcher.core.model.TargetScreen
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -106,5 +107,24 @@ class PreferencesManagerTest {
         val settings = preferencesManager.settingsFlow.first()
         assertThat(settings.intervalSeconds).isEqualTo(10L)
         assertThat(settings.intervalMillis).isEqualTo(10000L)
+    }
+
+    @Test
+    fun `separateScreensMode, fallbackListIds, and lockRotation state map and update properly`() = runTest {
+        val preferencesManager = createPreferencesManager()
+
+        preferencesManager.updateIsSeparateScreensMode(true)
+        preferencesManager.updateFallbackListId(ScheduleScreenScope.SHARED, "list_shared")
+        preferencesManager.updateFallbackListId(ScheduleScreenScope.HOME, "list_home")
+        preferencesManager.updateFallbackListId(ScheduleScreenScope.LOCK, "list_lock")
+        preferencesManager.updateLastLockRotated(987654321L, "content://lock/uri", "lock_photo_42")
+
+        val settings = preferencesManager.settingsFlow.first()
+        assertThat(settings.isSeparateScreensMode).isTrue()
+        assertThat(settings.fallbackListIdShared).isEqualTo("list_shared")
+        assertThat(settings.fallbackListIdHome).isEqualTo("list_home")
+        assertThat(settings.fallbackListIdLock).isEqualTo("list_lock")
+        assertThat(settings.currentLockWallpaperUri).isEqualTo("content://lock/uri")
+        assertThat(settings.currentLockPhotoId).isEqualTo("lock_photo_42")
     }
 }

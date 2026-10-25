@@ -23,8 +23,15 @@ data class WallpaperSettings(
     val doubleTapToCycle: Boolean = true,
     val lastRotatedAt: Long = 0L,
     val currentWallpaperUri: String? = null,
-    val currentPhotoId: String? = null
+    val currentPhotoId: String? = null,
+    val isSeparateScreensMode: Boolean = false,
+    val fallbackListIdShared: String = WallpaperList.DEFAULT_LIST_ID,
+    val fallbackListIdHome: String = WallpaperList.DEFAULT_LIST_ID,
+    val fallbackListIdLock: String = WallpaperList.DEFAULT_LIST_ID,
+    val currentLockWallpaperUri: String? = null,
+    val currentLockPhotoId: String? = null
 ) {
     val intervalMillis: Long
         get() = if (intervalSeconds > 0) intervalSeconds * 1000L else intervalMinutes * 60 * 1000L
 }
+

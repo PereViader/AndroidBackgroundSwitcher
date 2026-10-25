@@ -117,6 +117,69 @@ interface PhotoDao {
     """)
     suspend fun getOldestPhoto(): PhotoEntity?
 
+    @Query("""
+        SELECT p.* FROM photos p
+        INNER JOIN list_photo_cross_ref ref ON p.id = ref.photoId
+        WHERE ref.listId = :listId
+        ORDER BY p.lastDisplayedAt ASC
+        LIMIT 1
+    """)
+    suspend fun getLeastRecentlyUsedPhotoInList(listId: String): PhotoEntity?
+
+    @Query("""
+        SELECT p.* FROM photos p
+        INNER JOIN list_photo_cross_ref ref ON p.id = ref.photoId
+        WHERE ref.listId = :listId AND p.id != :excludePhotoId
+        ORDER BY p.lastDisplayedAt ASC
+        LIMIT 1
+    """)
+    suspend fun getLeastRecentlyUsedPhotoInListExcluding(listId: String, excludePhotoId: String): PhotoEntity?
+
+    @Query("""
+        SELECT p.* FROM photos p
+        INNER JOIN list_photo_cross_ref ref ON p.id = ref.photoId
+        WHERE ref.listId = :listId
+        ORDER BY RANDOM()
+        LIMIT 1
+    """)
+    suspend fun getRandomPhotoInList(listId: String): PhotoEntity?
+
+    @Query("""
+        SELECT p.* FROM photos p
+        INNER JOIN list_photo_cross_ref ref ON p.id = ref.photoId
+        WHERE ref.listId = :listId AND p.id != :excludePhotoId
+        ORDER BY RANDOM()
+        LIMIT 1
+    """)
+    suspend fun getRandomPhotoInListExcluding(listId: String, excludePhotoId: String): PhotoEntity?
+
+    @Query("""
+        SELECT p.* FROM photos p
+        INNER JOIN list_photo_cross_ref ref ON p.id = ref.photoId
+        WHERE ref.listId = :listId
+        ORDER BY p.dateAdded DESC
+        LIMIT 1
+    """)
+    suspend fun getLatestPhotoInList(listId: String): PhotoEntity?
+
+    @Query("""
+        SELECT p.* FROM photos p
+        INNER JOIN list_photo_cross_ref ref ON p.id = ref.photoId
+        WHERE ref.listId = :listId AND p.dateAdded > :currentDateAdded
+        ORDER BY p.dateAdded ASC
+        LIMIT 1
+    """)
+    suspend fun getNextChronologicalPhotoInList(listId: String, currentDateAdded: Long): PhotoEntity?
+
+    @Query("""
+        SELECT p.* FROM photos p
+        INNER JOIN list_photo_cross_ref ref ON p.id = ref.photoId
+        WHERE ref.listId = :listId
+        ORDER BY p.dateAdded ASC
+        LIMIT 1
+    """)
+    suspend fun getOldestPhotoInList(listId: String): PhotoEntity?
+
     @Query("SELECT COUNT(*) FROM photos WHERE isSelected = 1")
     suspend fun getSelectedPhotosCount(): Int
 

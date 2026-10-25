@@ -14,12 +14,20 @@ import com.pereviader.backgroundswitcher.core.crop.CenterCropEngine
 import com.pereviader.backgroundswitcher.core.crop.ScreenMetricsHelper
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
 import com.pereviader.backgroundswitcher.core.model.RotationOrder
+import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
+import com.pereviader.backgroundswitcher.core.model.TargetScreen
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import com.pereviader.backgroundswitcher.core.model.WallpaperSettings
 import com.pereviader.backgroundswitcher.core.wallpaper.WallpaperManagerHelper
 import com.pereviader.backgroundswitcher.data.local.datastore.PreferencesManager
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizationDao
+import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperListDao
+import com.pereviader.backgroundswitcher.data.local.db.entity.ListPhotoCrossRef
+import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperCustomizationEntity
+import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperListEntity
+import com.pereviader.backgroundswitcher.domain.repository.ScheduleRepository
 import com.pereviader.backgroundswitcher.domain.repository.WallpaperRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +50,9 @@ class WallpaperRepositoryImpl @Inject constructor(
     private val photoDao: PhotoDao,
     private val wallpaperCustomizationDao: WallpaperCustomizationDao,
     private val wallpaperManagerHelper: WallpaperManagerHelper,
-    private val imageLoader: ImageLoader
+    private val imageLoader: ImageLoader,
+    private val wallpaperListDao: WallpaperListDao? = null,
+    private val scheduleRepository: ScheduleRepository? = null
 ) : WallpaperRepository {
 
     companion object {
@@ -59,14 +69,132 @@ class WallpaperRepositoryImpl @Inject constructor(
         preferencesManager.updateIsEnabled(settings.isEnabled)
         preferencesManager.updateCycleOnUnlock(settings.cycleOnUnlock)
         preferencesManager.updateDoubleTapToCycle(settings.doubleTapToCycle)
+        preferencesManager.updateIsSeparateScreensMode(settings.isSeparateScreensMode)
+        preferencesManager.updateFallbackListId(ScheduleScreenScope.SHARED, settings.fallbackListIdShared)
+        preferencesManager.updateFallbackListId(ScheduleScreenScope.HOME, settings.fallbackListIdHome)
+        preferencesManager.updateFallbackListId(ScheduleScreenScope.LOCK, settings.fallbackListIdLock)
     }
 
     override fun isLiveWallpaperActive(): Boolean = wallpaperManagerHelper.isLiveWallpaperActive()
 
-    override suspend fun getNextCandidatePhoto(): PhotoItem? = withContext(Dispatchers.IO) {
+    override suspend fun getNextCandidatePhoto(): PhotoItem? =
+        getNextCandidatePhoto(ScheduleScreenScope.SHARED)
+
+    override suspend fun getNextCandidatePhoto(screenScope: ScheduleScreenScope): PhotoItem? = withContext(Dispatchers.IO) {
         val settings = preferencesManager.settingsFlow.first()
-        val currentPhotoId = settings.currentPhotoId
-        val entity = when (settings.rotationOrder) {
+        val effectiveScope = when {
+            !settings.isSeparateScreensMode -> ScheduleScreenScope.SHARED
+            screenScope == ScheduleScreenScope.SHARED -> ScheduleScreenScope.HOME
+            else -> screenScope
+        }
+
+        val currentPhotoId = if (effectiveScope == ScheduleScreenScope.LOCK && settings.isSeparateScreensMode) {
+            settings.currentLockPhotoId ?: settings.currentPhotoId
+        } else {
+            settings.currentPhotoId
+        }
+        val currentWallpaperUri = if (effectiveScope == ScheduleScreenScope.LOCK && settings.isSeparateScreensMode) {
+            settings.currentLockWallpaperUri ?: settings.currentWallpaperUri
+        } else {
+            settings.currentWallpaperUri
+        }
+
+        val entity = resolveListScopedCandidate(
+            settings = settings,
+            effectiveScope = effectiveScope,
+            currentPhotoId = currentPhotoId,
+            currentWallpaperUri = currentWallpaperUri
+        ) ?: resolveLegacyCandidate(
+            settings = settings,
+            currentPhotoId = currentPhotoId,
+            currentWallpaperUri = currentWallpaperUri
+        )
+
+        entity?.toDomain()
+    }
+
+    private suspend fun resolveListScopedCandidate(
+        settings: WallpaperSettings,
+        effectiveScope: ScheduleScreenScope,
+        currentPhotoId: String?,
+        currentWallpaperUri: String?
+    ): PhotoEntity? {
+        val schedRepo = scheduleRepository ?: return null
+        val listDao = wallpaperListDao ?: return null
+
+        val resolution = schedRepo.resolveActiveList(effectiveScope)
+        val fallbackId = when (effectiveScope) {
+            ScheduleScreenScope.SHARED -> settings.fallbackListIdShared
+            ScheduleScreenScope.HOME -> settings.fallbackListIdHome
+            ScheduleScreenScope.LOCK -> settings.fallbackListIdLock
+        }
+
+        val candidateListIds = listOf(
+            resolution.activeListId,
+            fallbackId,
+            WallpaperList.DEFAULT_LIST_ID
+        ).distinct()
+
+        for (listId in candidateListIds) {
+            if (listDao.getPhotosCountInList(listId) > 0) {
+                val listEntity = listDao.getListById(listId)
+                val rotationOrder = listEntity?.let {
+                    runCatching { RotationOrder.valueOf(it.rotationOrder) }.getOrNull()
+                } ?: settings.rotationOrder
+                val photo = queryPhotoInList(
+                    listId = listId,
+                    rotationOrder = rotationOrder,
+                    currentPhotoId = currentPhotoId,
+                    currentWallpaperUri = currentWallpaperUri
+                )
+                if (photo != null) return photo
+            }
+        }
+        return null
+    }
+
+    private suspend fun queryPhotoInList(
+        listId: String,
+        rotationOrder: RotationOrder,
+        currentPhotoId: String?,
+        currentWallpaperUri: String?
+    ): PhotoEntity? {
+        return when (rotationOrder) {
+            RotationOrder.RANDOM -> {
+                if (currentPhotoId != null) {
+                    photoDao.getRandomPhotoInListExcluding(listId, currentPhotoId)
+                        ?: photoDao.getRandomPhotoInList(listId)
+                } else {
+                    photoDao.getRandomPhotoInList(listId)
+                }
+            }
+            RotationOrder.CHRONOLOGICAL -> {
+                val currentPhoto = currentPhotoId?.let { photoDao.getPhotoById(it) }
+                    ?: currentWallpaperUri?.let { photoDao.getPhotoByUri(it) }
+                if (currentPhoto != null) {
+                    photoDao.getNextChronologicalPhotoInList(listId, currentPhoto.dateAdded)
+                        ?: photoDao.getOldestPhotoInList(listId)
+                } else {
+                    photoDao.getOldestPhotoInList(listId) ?: photoDao.getLatestPhotoInList(listId)
+                }
+            }
+            RotationOrder.LEAST_RECENTLY_USED -> {
+                if (currentPhotoId != null) {
+                    photoDao.getLeastRecentlyUsedPhotoInListExcluding(listId, currentPhotoId)
+                        ?: photoDao.getLeastRecentlyUsedPhotoInList(listId)
+                } else {
+                    photoDao.getLeastRecentlyUsedPhotoInList(listId)
+                }
+            }
+        }
+    }
+
+    private suspend fun resolveLegacyCandidate(
+        settings: WallpaperSettings,
+        currentPhotoId: String?,
+        currentWallpaperUri: String?
+    ): PhotoEntity? {
+        return when (settings.rotationOrder) {
             RotationOrder.RANDOM -> {
                 if (currentPhotoId != null) {
                     photoDao.getRandomPhotoExcluding(currentPhotoId) ?: photoDao.getRandomPhoto()
@@ -75,8 +203,8 @@ class WallpaperRepositoryImpl @Inject constructor(
                 }
             }
             RotationOrder.CHRONOLOGICAL -> {
-                val currentPhoto = settings.currentPhotoId?.let { photoDao.getPhotoById(it) }
-                    ?: settings.currentWallpaperUri?.let { photoDao.getPhotoByUri(it) }
+                val currentPhoto = currentPhotoId?.let { photoDao.getPhotoById(it) }
+                    ?: currentWallpaperUri?.let { photoDao.getPhotoByUri(it) }
                 if (currentPhoto != null) {
                     photoDao.getNextChronologicalPhoto(currentPhoto.dateAdded) ?: photoDao.getOldestPhoto()
                 } else {
@@ -90,22 +218,6 @@ class WallpaperRepositoryImpl @Inject constructor(
                     photoDao.getLeastRecentlyUsedPhoto()
                 }
             }
-        }
-
-        entity?.let {
-            PhotoItem(
-                id = it.id,
-                albumId = it.albumId,
-                uri = it.uri,
-                width = it.width,
-                height = it.height,
-                dateAdded = it.dateAdded,
-                lastDisplayedAt = it.lastDisplayedAt,
-                cropX = it.cropX,
-                cropY = it.cropY,
-                zoom = it.zoom,
-                isSelected = it.isSelected
-            )
         }
     }
 
@@ -125,7 +237,6 @@ class WallpaperRepositoryImpl @Inject constructor(
             if (result !is SuccessResult) {
                 val error = (result as? ErrorResult)?.throwable
                 Log.e(TAG, "Failed to load image from ${photo.uri}", error)
-                // If the image is no longer accessible, clean it up and remove its customization
                 if (!isPhotoReferenceable(photo.uri)) {
                     deleteUnreferenceablePhoto(photo.id, photo.uri)
                 }
@@ -152,18 +263,47 @@ class WallpaperRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getActiveListTargetScreen(screenScope: ScheduleScreenScope): TargetScreen = withContext(Dispatchers.IO) {
+        val schedRepo = scheduleRepository
+        val listDao = wallpaperListDao
+        if (schedRepo != null && listDao != null) {
+            val resolution = schedRepo.resolveActiveList(screenScope)
+            val listEntity = listDao.getListById(resolution.activeListId)
+            val targetScreen = listEntity?.let {
+                runCatching { TargetScreen.valueOf(it.targetScreen) }.getOrNull()
+            }
+            if (targetScreen != null) return@withContext targetScreen
+        }
+        val settings = preferencesManager.settingsFlow.first()
+        settings.targetScreen
+    }
+
     override suspend fun applyWallpaper(bitmap: Bitmap): Result<Unit> {
         if (wallpaperManagerHelper.isLiveWallpaperActive()) {
             return Result.success(Unit)
         }
-        val settings = preferencesManager.settingsFlow.first()
-        return wallpaperManagerHelper.setWallpaper(bitmap, settings.targetScreen)
+        val targetScreen = getActiveListTargetScreen(ScheduleScreenScope.SHARED)
+        return wallpaperManagerHelper.setWallpaper(bitmap, targetScreen)
     }
 
-    override suspend fun markPhotoDisplayed(photoId: String) = withContext(Dispatchers.IO) {
+    override suspend fun applyWallpaper(bitmap: Bitmap, targetScreenOverride: TargetScreen): Result<Unit> {
+        if (wallpaperManagerHelper.isLiveWallpaperActive() && targetScreenOverride != TargetScreen.LOCK) {
+            return Result.success(Unit)
+        }
+        return wallpaperManagerHelper.setWallpaper(bitmap, targetScreenOverride)
+    }
+
+    override suspend fun markPhotoDisplayed(photoId: String) =
+        markPhotoDisplayed(photoId, ScheduleScreenScope.SHARED)
+
+    override suspend fun markPhotoDisplayed(photoId: String, screenScope: ScheduleScreenScope) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val photo = photoDao.getPhotoById(photoId)
-        preferencesManager.updateLastRotated(now, photo?.uri, photoId)
+        if (screenScope == ScheduleScreenScope.LOCK) {
+            preferencesManager.updateLastLockRotated(now, photo?.uri, photoId)
+        } else {
+            preferencesManager.updateLastRotated(now, photo?.uri, photoId)
+        }
         photoDao.updateLastDisplayed(photoId, now)
     }
 
@@ -178,21 +318,7 @@ class WallpaperRepositoryImpl @Inject constructor(
                 else -> flowOf(null)
             }
         }.map { entity ->
-            entity?.let {
-                PhotoItem(
-                    id = it.id,
-                    albumId = it.albumId,
-                    uri = it.uri,
-                    width = it.width,
-                    height = it.height,
-                    dateAdded = it.dateAdded,
-                    lastDisplayedAt = it.lastDisplayedAt,
-                    cropX = it.cropX,
-                    cropY = it.cropY,
-                    zoom = it.zoom,
-                    isSelected = it.isSelected
-                )
-            }
+            entity?.toDomain()
         }
         .distinctUntilChanged()
 
@@ -203,6 +329,27 @@ class WallpaperRepositoryImpl @Inject constructor(
     override suspend fun togglePhotoSelection(photoId: String, isSelected: Boolean) = withContext(Dispatchers.IO) {
         val photo = photoDao.getPhotoById(photoId) ?: return@withContext
         photoDao.updatePhotoSelection(photoId, isSelected)
+        wallpaperListDao?.let { listDao ->
+            listDao.insertListIgnore(
+                WallpaperListEntity(
+                    id = WallpaperList.DEFAULT_LIST_ID,
+                    name = WallpaperList.DEFAULT_LIST_NAME,
+                    isDefault = true,
+                    orderIndex = 0
+                )
+            )
+            if (isSelected) {
+                listDao.insertCrossRef(
+                    ListPhotoCrossRef(
+                        listId = WallpaperList.DEFAULT_LIST_ID,
+                        photoId = photoId,
+                        addedAt = System.currentTimeMillis()
+                    )
+                )
+            } else {
+                listDao.deleteAllCrossRefsForPhoto(photoId)
+            }
+        }
         val uri = photo.uri
         val customization = wallpaperCustomizationDao.getCustomization(uri)
         val cropX = customization?.cropX ?: photo.cropX
@@ -290,62 +437,62 @@ class WallpaperRepositoryImpl @Inject constructor(
             ?: settings.currentWallpaperUri?.let { photoDao.getPhotoByUri(it) })
             ?: return@withContext Result.failure(IllegalStateException("No current photo found to reapply"))
 
-        val photoItem = PhotoItem(
-            id = entity.id,
-            albumId = entity.albumId,
-            uri = entity.uri,
-            width = entity.width,
-            height = entity.height,
-            dateAdded = entity.dateAdded,
-            lastDisplayedAt = entity.lastDisplayedAt,
-            cropX = entity.cropX,
-            cropY = entity.cropY,
-            zoom = entity.zoom,
-            isSelected = entity.isSelected
-        )
+        val photoItem = entity.toDomain()
 
         val dimensions = ScreenMetricsHelper.getScreenDimensions(context)
         val bitmap = loadAndCropBitmap(photoItem, dimensions.width, dimensions.height)
             ?: return@withContext Result.failure(IllegalStateException("Failed to render bitmap for wallpaper"))
 
-        val result = applyWallpaper(bitmap)
-        result
+        applyWallpaper(bitmap)
     }
 
-    override suspend fun setPhotoAsWallpaper(photo: PhotoItem): Result<Unit> = withContext(Dispatchers.IO) {
-        val freshest = photoDao.getPhotoById(photo.id)?.let {
-            PhotoItem(
-                id = it.id,
-                albumId = it.albumId,
-                uri = it.uri,
-                width = it.width,
-                height = it.height,
-                dateAdded = it.dateAdded,
-                lastDisplayedAt = it.lastDisplayedAt,
-                cropX = it.cropX,
-                cropY = it.cropY,
-                zoom = it.zoom,
-                isSelected = it.isSelected
-            )
-        } ?: photo
+    override suspend fun setPhotoAsWallpaper(photo: PhotoItem): Result<Unit> =
+        setPhotoAsWallpaper(photo, targetScreenOverride = null)
+
+    override suspend fun setPhotoAsWallpaper(
+        photo: PhotoItem,
+        targetScreenOverride: TargetScreen?
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val freshest = photoDao.getPhotoById(photo.id)?.toDomain() ?: photo
 
         val isLiveActive = wallpaperManagerHelper.isLiveWallpaperActive()
-        val applyResult = if (isLiveActive) {
-            // Live wallpaper is active: updating markPhotoDisplayed will emit to LiveWallpaperService
-            // without calling setBitmap (which would cancel and unbind the live wallpaper).
+        val applyResult = if (isLiveActive && targetScreenOverride != TargetScreen.LOCK) {
             Result.success(Unit)
         } else {
             val dimensions = ScreenMetricsHelper.getScreenDimensions(context)
             val bitmap = loadAndCropBitmap(freshest, dimensions.width, dimensions.height)
                 ?: return@withContext Result.failure(IllegalStateException("Failed to load and crop photo: ${freshest.uri}"))
-            applyWallpaper(bitmap)
+            if (targetScreenOverride != null) {
+                applyWallpaper(bitmap, targetScreenOverride)
+            } else {
+                applyWallpaper(bitmap)
+            }
         }
 
         if (applyResult.isSuccess) {
-            markPhotoDisplayed(freshest.id)
+            val scope = if (targetScreenOverride == TargetScreen.LOCK) {
+                ScheduleScreenScope.LOCK
+            } else {
+                ScheduleScreenScope.SHARED
+            }
+            markPhotoDisplayed(freshest.id, scope)
         }
         applyResult
     }
+
+    private fun PhotoEntity.toDomain() = PhotoItem(
+        id = id,
+        albumId = albumId,
+        uri = uri,
+        width = width,
+        height = height,
+        dateAdded = dateAdded,
+        lastDisplayedAt = lastDisplayedAt,
+        cropX = cropX,
+        cropY = cropY,
+        zoom = zoom,
+        isSelected = isSelected
+    )
 
     private fun isPhotoReferenceable(uriString: String): Boolean {
         return try {

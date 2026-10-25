@@ -14,6 +14,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Settings
@@ -37,6 +38,7 @@ import androidx.core.content.ContextCompat
 import com.pereviader.backgroundswitcher.core.wallpaper.LiveWallpaperService
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreContentObserver
 import com.pereviader.backgroundswitcher.ui.albums.AlbumSelectionScreen
+import com.pereviader.backgroundswitcher.ui.lists.ListsAndScheduleScreen
 import com.pereviader.backgroundswitcher.ui.preview.PreviewScreen
 import com.pereviader.backgroundswitcher.ui.settings.SettingsScreen
 import com.pereviader.backgroundswitcher.ui.theme.BackgroundSwitcherTheme
@@ -81,6 +83,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.checkLiveWallpaperStatus()
+        viewModel.refreshScheduleClock()
     }
 
     override fun onStop() {
@@ -128,10 +131,18 @@ fun MainAppContent(viewModel: MainViewModel) {
     val context = LocalContext.current
     val albums by viewModel.albums.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val lists by viewModel.lists.collectAsState()
+    val workingListId by viewModel.workingListId.collectAsState()
+    val previewListId by viewModel.previewListId.collectAsState()
+    val rulesShared by viewModel.scheduleRulesShared.collectAsState()
+    val rulesHome by viewModel.scheduleRulesHome.collectAsState()
+    val rulesLock by viewModel.scheduleRulesLock.collectAsState()
+    val resolutionShared by viewModel.activeResolutionShared.collectAsState()
+    val resolutionHome by viewModel.activeResolutionHome.collectAsState()
+    val resolutionLock by viewModel.activeResolutionLock.collectAsState()
     val previewPhotos by viewModel.previewPhotos.collectAsState()
     val selectedPhotoIndex by viewModel.selectedPreviewPhotoIndex.collectAsState()
     val currentPhoto by viewModel.currentPreviewPhoto.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLiveWallpaperActive by viewModel.isLiveWallpaperActive.collectAsState()
 
     fun openLiveWallpaperChooser() {
@@ -192,6 +203,17 @@ fun MainAppContent(viewModel: MainViewModel) {
                         }
                         selectedTab = 2
                     },
+                    icon = { Icon(Icons.Default.CollectionsBookmark, contentDescription = "Lists & Schedule") },
+                    label = { Text("Lists & Schedule") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = {
+                        if (selectedTab == 0) {
+                            viewModel.flushPendingWallpaperUpdate()
+                        }
+                        selectedTab = 3
+                    },
                     icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                     label = { Text("Settings") }
                 )
@@ -214,6 +236,16 @@ fun MainAppContent(viewModel: MainViewModel) {
                 },
                 onSetAsWallpaper = { photo -> viewModel.setPhotoAsWallpaper(photo) },
                 onActivateLiveWallpaper = ::openLiveWallpaperChooser,
+                lists = lists,
+                previewListId = previewListId,
+                activeScheduledListId = if (settings.isSeparateScreensMode) {
+                    resolutionHome.activeListId
+                } else {
+                    resolutionShared.activeListId
+                },
+                onSelectPreviewList = { listId -> viewModel.selectPreviewList(listId) },
+                onSetPhotoLists = { photoId, targetIds -> viewModel.setPhotoLists(photoId, targetIds) },
+                onCreateList = { name, onCreated -> viewModel.createList(name, onCreated) },
                 modifier = Modifier.padding(innerPadding)
             )
             1 -> AlbumSelectionScreen(
@@ -232,9 +264,59 @@ fun MainAppContent(viewModel: MainViewModel) {
                     viewModel.openAlbumInPreview(albumId, photoId)
                     selectedTab = 0
                 },
+                lists = lists,
+                workingListId = workingListId,
+                onSelectWorkingList = { listId -> viewModel.selectWorkingList(listId) },
+                onSetPhotoLists = { photoId, targetIds -> viewModel.setPhotoLists(photoId, targetIds) },
+                onSetAlbumLists = { albumId, targetIds -> viewModel.setAlbumLists(albumId, targetIds) },
+                onCreateList = { name, onCreated -> viewModel.createList(name, onCreated) },
                 modifier = Modifier.padding(innerPadding)
             )
-            2 -> SettingsScreen(
+            2 -> ListsAndScheduleScreen(
+                lists = lists,
+                isSeparateScreensMode = settings.isSeparateScreensMode,
+                rulesShared = rulesShared,
+                rulesHome = rulesHome,
+                rulesLock = rulesLock,
+                resolutionShared = resolutionShared,
+                resolutionHome = resolutionHome,
+                resolutionLock = resolutionLock,
+                fallbackListIdShared = settings.fallbackListIdShared,
+                fallbackListIdHome = settings.fallbackListIdHome,
+                fallbackListIdLock = settings.fallbackListIdLock,
+                observePhotosInList = { listId -> viewModel.observePhotosInList(listId) },
+                onCreateList = { name -> viewModel.createList(name) },
+                onRenameList = { listId, newName -> viewModel.renameList(listId, newName) },
+                onUpdateList = { listId, newName, screen, order -> viewModel.updateListDetails(listId, newName, screen, order) },
+                onCreateListWithDetails = { name, screen, order -> viewModel.createList(name, screen, order) },
+                onDeleteList = { listId -> viewModel.deleteList(listId) },
+                onRemovePhotoFromList = { listId, photoId ->
+                    viewModel.removePhotosFromList(listId, listOf(photoId))
+                },
+                onToggleSeparateScreensMode = { enabled -> viewModel.setSeparateScreensMode(enabled) },
+                onSaveRule = { rule -> viewModel.saveScheduleRule(rule) },
+                onDeleteRule = { ruleId -> viewModel.deleteScheduleRule(ruleId) },
+                onToggleRuleEnabled = { ruleId, enabled -> viewModel.toggleScheduleRuleEnabled(ruleId, enabled) },
+                onMoveRulePriority = { scope, ruleId, moveUp ->
+                    viewModel.moveScheduleRulePriority(scope, ruleId, moveUp)
+                },
+                onReorderRules = { scope, orderedIds ->
+                    viewModel.reorderScheduleRules(scope, orderedIds)
+                },
+                onSetFallbackList = { scope, listId -> viewModel.setFallbackList(scope, listId) },
+                onCopyScheduleScope = { from, to -> viewModel.copyScheduleScope(from, to) },
+                onRefreshClock = { viewModel.refreshScheduleClock() },
+                onOpenAddPhotosFromAlbums = { listId ->
+                    viewModel.selectWorkingList(listId)
+                    selectedTab = 1
+                },
+                onOpenListInPreview = { listId ->
+                    viewModel.selectPreviewList(listId)
+                    selectedTab = 0
+                },
+                modifier = Modifier.padding(innerPadding)
+            )
+            3 -> SettingsScreen(
                 settings = settings,
                 isLiveWallpaperActive = isLiveWallpaperActive,
                 onUpdateSettings = { newSettings -> viewModel.updateSettings(newSettings) },
