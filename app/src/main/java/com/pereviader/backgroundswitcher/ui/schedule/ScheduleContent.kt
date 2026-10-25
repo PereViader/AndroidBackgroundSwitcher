@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
@@ -67,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.pereviader.backgroundswitcher.core.model.ActiveScheduleResolution
+import com.pereviader.backgroundswitcher.core.model.RuleType
 import com.pereviader.backgroundswitcher.core.model.ScheduleRule
 import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
 import com.pereviader.backgroundswitcher.core.model.WallpaperList
@@ -368,7 +370,10 @@ private fun ScheduleRuleCard(
     dragHandleModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
 ) {
-    val timeWindowText = if (rule.startMinuteOfDay == rule.endMinuteOfDay) {
+    val isGps = rule.ruleType == RuleType.GPS
+    val headerText = if (isGps) {
+        "GPS • Within ${formatRadius(rule.radiusMeters ?: 100.0)}"
+    } else if (rule.startMinuteOfDay == rule.endMinuteOfDay) {
         "All Day (24h)"
     } else {
         "${formatMinuteOfDay(rule.startMinuteOfDay)} – ${formatMinuteOfDay(rule.endMinuteOfDay)}"
@@ -465,11 +470,22 @@ private fun ScheduleRuleCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text = timeWindowText,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isGps) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Text(
+                        text = headerText,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(2.dp))
 
@@ -485,7 +501,11 @@ private fun ScheduleRuleCard(
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = formatDaysMaskSummary(rule.daysOfWeekMask),
+                            text = if (isGps) {
+                                "Target: ${"%.4f".format(rule.latitude ?: 0.0)}, ${"%.4f".format(rule.longitude ?: 0.0)}"
+                            } else {
+                                formatDaysMaskSummary(rule.daysOfWeekMask)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

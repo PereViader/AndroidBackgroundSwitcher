@@ -24,6 +24,7 @@ robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
 androidxTestExtJunit = "1.2.1"
 documentfile = "1.0.1"
+osmdroid = "6.1.20"
 
 [libraries]
 # AndroidX Core & Lifecycle
@@ -63,6 +64,9 @@ androidx-datastore-preferences = { group = "androidx.datastore", name = "datasto
 
 # Image Loading (Coil)
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# OpenStreetMap (osmdroid)
+osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
 
 # Networking (OkHttp)
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }

@@ -2,6 +2,7 @@ package com.pereviader.backgroundswitcher.data.repository
 
 import com.pereviader.backgroundswitcher.core.model.ActiveScheduleResolution
 import com.pereviader.backgroundswitcher.core.model.BoundaryTransition
+import com.pereviader.backgroundswitcher.core.model.RuleType
 import com.pereviader.backgroundswitcher.core.model.ScheduleRule
 import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
 import com.pereviader.backgroundswitcher.core.model.WallpaperList
@@ -295,9 +296,13 @@ class ScheduleRepositoryImpl @Inject constructor(
         screenScope = runCatching { ScheduleScreenScope.valueOf(screenScope) }
             .getOrDefault(ScheduleScreenScope.SHARED),
         priority = priority,
+        ruleType = runCatching { RuleType.valueOf(ruleType) }.getOrDefault(RuleType.TIME),
         startMinuteOfDay = startMinuteOfDay,
         endMinuteOfDay = endMinuteOfDay,
         daysOfWeekMask = daysOfWeekMask,
+        latitude = latitude,
+        longitude = longitude,
+        radiusMeters = radiusMeters,
         isEnabled = isEnabled,
         isDefaultRule = isDefaultRule || id.startsWith("default_rule_")
     )
@@ -307,9 +312,13 @@ class ScheduleRepositoryImpl @Inject constructor(
         listId = listId,
         screenScope = screenScope.name,
         priority = priority,
+        ruleType = ruleType.name,
         startMinuteOfDay = startMinuteOfDay,
         endMinuteOfDay = endMinuteOfDay,
         daysOfWeekMask = daysOfWeekMask,
+        latitude = latitude,
+        longitude = longitude,
+        radiusMeters = radiusMeters,
         isEnabled = isEnabled,
         isDefaultRule = isDefaultRule
     )

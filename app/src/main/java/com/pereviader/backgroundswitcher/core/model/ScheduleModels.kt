@@ -9,15 +9,24 @@ enum class ScheduleScreenScope {
     LOCK
 }
 
+enum class RuleType {
+    TIME,
+    GPS
+}
+
 data class ScheduleRule(
     val id: String,
     val listId: String,
     val listName: String = "",
     val screenScope: ScheduleScreenScope = ScheduleScreenScope.SHARED,
     val priority: Int,
-    val startMinuteOfDay: Int,
-    val endMinuteOfDay: Int,
-    val daysOfWeekMask: Int,
+    val ruleType: RuleType = RuleType.TIME,
+    val startMinuteOfDay: Int = 0,
+    val endMinuteOfDay: Int = 0,
+    val daysOfWeekMask: Int = ALL_DAYS_MASK,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val radiusMeters: Double? = null,
     val isEnabled: Boolean = true,
     val isDefaultRule: Boolean = false
 ) {

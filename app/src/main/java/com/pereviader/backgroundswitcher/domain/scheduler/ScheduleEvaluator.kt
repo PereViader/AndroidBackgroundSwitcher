@@ -2,6 +2,7 @@ package com.pereviader.backgroundswitcher.domain.scheduler
 
 import com.pereviader.backgroundswitcher.core.model.ActiveScheduleResolution
 import com.pereviader.backgroundswitcher.core.model.BoundaryTransition
+import com.pereviader.backgroundswitcher.core.model.RuleType
 import com.pereviader.backgroundswitcher.core.model.ScheduleRule
 import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
 import com.pereviader.backgroundswitcher.core.model.WallpaperList
@@ -22,9 +23,9 @@ class ScheduleEvaluator @Inject constructor() {
 
     /**
      * Evaluates the ordered priority rules from top to bottom (sorted by priority ASC)
-     * for the given [screenScope] at [dateTime].
+     * for the given [screenScope] at [dateTime] and optional [currentLatitude]/[currentLongitude].
      *
-     * The first enabled rule whose time window and day-of-week mask match [dateTime]
+     * The first enabled rule whose condition (time window or GPS radius) matches
      * (and whose list is non-empty when [nonEmptyListIds] is provided) wins.
      * If no rule matches, [fallbackListId] is returned.
      */
@@ -33,6 +34,8 @@ class ScheduleEvaluator @Inject constructor() {
         screenScope: ScheduleScreenScope,
         fallbackListId: String = WallpaperList.DEFAULT_LIST_ID,
         dateTime: LocalDateTime,
+        currentLatitude: Double? = null,
+        currentLongitude: Double? = null,
         nonEmptyListIds: Set<String>? = null
     ): ActiveScheduleResolution {
         val minuteOfDay = dateTime.hour * 60 + dateTime.minute
@@ -44,7 +47,11 @@ class ScheduleEvaluator @Inject constructor() {
             .sortedBy { it.priority }
 
         for (rule in scopedRules) {
-            if (isRuleSatisfied(rule, currentDay, previousDay, minuteOfDay)) {
+            val matches = when (rule.ruleType) {
+                RuleType.TIME -> isRuleSatisfied(rule, currentDay, previousDay, minuteOfDay)
+                RuleType.GPS -> isGpsRuleSatisfied(rule, currentLatitude, currentLongitude)
+            }
+            if (matches) {
                 if (nonEmptyListIds == null || rule.listId in nonEmptyListIds) {
                     return ActiveScheduleResolution(
                         screenScope = screenScope,
@@ -73,6 +80,41 @@ class ScheduleEvaluator @Inject constructor() {
             matchedRuleId = null,
             isFallback = true
         )
+    }
+
+    /**
+     * Checks whether [rule] (a GPS based rule) matches the current coordinates.
+     * When the user enters that area, the rule is true. When outside it is false.
+     */
+    fun isGpsRuleSatisfied(
+        rule: ScheduleRule,
+        currentLatitude: Double?,
+        currentLongitude: Double?
+    ): Boolean {
+        if (!rule.isEnabled) return false
+        val targetLat = rule.latitude ?: return false
+        val targetLon = rule.longitude ?: return false
+        val radius = rule.radiusMeters ?: return false
+        if (currentLatitude == null || currentLongitude == null) return false
+
+        val distance = haversineDistanceMeters(currentLatitude, currentLongitude, targetLat, targetLon)
+        return distance <= radius
+    }
+
+    /**
+     * Calculates great-circle distance between two geographic coordinates in meters using the Haversine formula.
+     */
+    fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val earthRadiusMeters = 6371000.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val sinHalfLat = Math.sin(dLat / 2)
+        val sinHalfLon = Math.sin(dLon / 2)
+        val a = sinHalfLat * sinHalfLat +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                sinHalfLon * sinHalfLon
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a))
+        return earthRadiusMeters * c
     }
 
     /**

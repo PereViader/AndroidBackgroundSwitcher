@@ -23,7 +23,7 @@ import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperListEntit
         ListPhotoCrossRef::class,
         ScheduleRuleEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

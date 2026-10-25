@@ -133,6 +133,9 @@ dependencies {
     // Image Loading (Coil)
     implementation(libs.coil.compose)
 
+    // OpenStreetMap (osmdroid)
+    implementation(libs.osmdroid.android)
+
     // Networking
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)

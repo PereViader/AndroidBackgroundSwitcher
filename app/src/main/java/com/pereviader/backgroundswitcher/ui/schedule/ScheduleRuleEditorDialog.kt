@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -27,6 +29,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +37,7 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,11 +47,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pereviader.backgroundswitcher.core.model.RuleType
 import com.pereviader.backgroundswitcher.core.model.ScheduleRule
 import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
 import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import java.time.DayOfWeek
 import java.util.UUID
+import kotlin.math.exp
+import kotlin.math.ln
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -63,10 +70,14 @@ fun ScheduleRuleEditorDialog(
         ?: lists.firstOrNull()?.id
         ?: WallpaperList.DEFAULT_LIST_ID
 
+    var ruleType by remember(initialRule) { mutableStateOf(initialRule?.ruleType ?: RuleType.TIME) }
     var selectedListId by remember(initialRule) { mutableStateOf(defaultListId) }
     var startMinute by remember(initialRule) { mutableIntStateOf(initialRule?.startMinuteOfDay ?: (9 * 60)) }
     var endMinute by remember(initialRule) { mutableIntStateOf(initialRule?.endMinuteOfDay ?: (17 * 60)) }
     var daysMask by remember(initialRule) { mutableIntStateOf(initialRule?.daysOfWeekMask ?: ScheduleRule.ALL_DAYS_MASK) }
+    var latitude by remember(initialRule) { mutableDoubleStateOf(initialRule?.latitude ?: 41.3851) }
+    var longitude by remember(initialRule) { mutableDoubleStateOf(initialRule?.longitude ?: 2.1734) }
+    var radiusMeters by remember(initialRule) { mutableDoubleStateOf(initialRule?.radiusMeters ?: 250.0) }
 
     var showListDropdown by remember { mutableStateOf(false) }
     var editingTimeForStart by remember { mutableStateOf<Boolean?>(null) }
@@ -139,171 +150,302 @@ fun ScheduleRuleEditorDialog(
                     }
                 }
 
-                // 2. Time Window Presets + Start / End Pickers
+                // 2. Rule Type Selector (Horizontal two option selector: Time Based vs GPS)
                 Column {
                     Text(
-                        text = "Time Window",
+                        text = "Rule Type",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("rule_type_selector"),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedCard(
+                        FilterChip(
+                            selected = ruleType == RuleType.TIME,
+                            onClick = { ruleType = RuleType.TIME },
+                            label = { Text("Time Based") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.AccessTime,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { editingTimeForStart = true }
-                                .testTag("rule_editor_start_time"),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "Start Time",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                .testTag("rule_type_time")
+                        )
+                        FilterChip(
+                            selected = ruleType == RuleType.GPS,
+                            onClick = { ruleType = RuleType.GPS },
+                            label = { Text("GPS") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.AccessTime,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = formatMinuteOfDay(startMinute),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        OutlinedCard(
+                            },
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { editingTimeForStart = false }
-                                .testTag("rule_editor_end_time"),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "End Time",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.AccessTime,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = formatMinuteOfDay(endMinute),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (startMinute > endMinute) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "🌙 Overnight rule: spans past midnight into the next morning",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
+                                .testTag("rule_type_gps")
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val timePresets = listOf(
-                            Triple("Work (09:00–17:00)", 9 * 60, 17 * 60),
-                            Triple("Evening (17:00–22:00)", 17 * 60, 22 * 60),
-                            Triple("Night (22:00–07:00)", 22 * 60, 7 * 60),
-                            Triple("All Day (00:00–24:00)", 0, 0)
-                        )
-                        timePresets.forEach { (label, presetStart, presetEnd) ->
-                            FilterChip(
-                                selected = startMinute == presetStart && endMinute == presetEnd,
-                                onClick = {
-                                    startMinute = presetStart
-                                    endMinute = presetEnd
-                                },
-                                label = { Text(label, style = MaterialTheme.typography.labelSmall) }
-                            )
-                        }
                     }
                 }
 
-                // 3. Days of Week Selector
-                Column {
-                    Text(
-                        text = "Active Days",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
+                if (ruleType == RuleType.TIME) {
+                    // Time Window Presets + Start / End Pickers
+                    Column {
+                        Text(
+                            text = "Time Window",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(
-                            selected = daysMask == ScheduleRule.ALL_DAYS_MASK,
-                            onClick = { daysMask = ScheduleRule.ALL_DAYS_MASK },
-                            label = { Text("Every day", style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.testTag("preset_every_day")
-                        )
-                        FilterChip(
-                            selected = daysMask == ScheduleRule.WEEKDAYS_MASK,
-                            onClick = { daysMask = ScheduleRule.WEEKDAYS_MASK },
-                            label = { Text("Weekdays", style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.testTag("preset_weekdays")
-                        )
-                        FilterChip(
-                            selected = daysMask == ScheduleRule.WEEKENDS_MASK,
-                            onClick = { daysMask = ScheduleRule.WEEKENDS_MASK },
-                            label = { Text("Weekends", style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.testTag("preset_weekends")
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { editingTimeForStart = true }
+                                    .testTag("rule_editor_start_time"),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Start Time",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.AccessTime,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = formatMinuteOfDay(startMinute),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { editingTimeForStart = false }
+                                    .testTag("rule_editor_end_time"),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "End Time",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.AccessTime,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = formatMinuteOfDay(endMinute),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (startMinute > endMinute) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "🌙 Overnight rule: spans past midnight into the next morning",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val timePresets = listOf(
+                                Triple("Work (09:00–17:00)", 9 * 60, 17 * 60),
+                                Triple("Evening (17:00–22:00)", 17 * 60, 22 * 60),
+                                Triple("Night (22:00–07:00)", 22 * 60, 7 * 60),
+                                Triple("All Day (00:00–24:00)", 0, 0)
+                            )
+                            timePresets.forEach { (label, presetStart, presetEnd) ->
+                                FilterChip(
+                                    selected = startMinute == presetStart && endMinute == presetEnd,
+                                    onClick = {
+                                        startMinute = presetStart
+                                        endMinute = presetEnd
+                                    },
+                                    label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val dayLabels = listOf(
-                            DayOfWeek.MONDAY to "Mon",
-                            DayOfWeek.TUESDAY to "Tue",
-                            DayOfWeek.WEDNESDAY to "Wed",
-                            DayOfWeek.THURSDAY to "Thu",
-                            DayOfWeek.FRIDAY to "Fri",
-                            DayOfWeek.SATURDAY to "Sat",
-                            DayOfWeek.SUNDAY to "Sun"
+                    // Active Days
+                    Column {
+                        Text(
+                            text = "Active Days",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
                         )
-                        dayLabels.forEach { (day, label) ->
-                            val bit = ScheduleRule.dayBit(day)
-                            val isSelected = (daysMask and bit) != 0
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    val next = if (isSelected) daysMask and bit.inv() else daysMask or bit
-                                    if (next != 0) {
-                                        daysMask = next
-                                    }
-                                },
-                                label = { Text(label) },
-                                modifier = Modifier.testTag("day_chip_${day.name}")
+                                selected = daysMask == ScheduleRule.ALL_DAYS_MASK,
+                                onClick = { daysMask = ScheduleRule.ALL_DAYS_MASK },
+                                label = { Text("Every day", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("preset_every_day")
                             )
+                            FilterChip(
+                                selected = daysMask == ScheduleRule.WEEKDAYS_MASK,
+                                onClick = { daysMask = ScheduleRule.WEEKDAYS_MASK },
+                                label = { Text("Weekdays", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("preset_weekdays")
+                            )
+                            FilterChip(
+                                selected = daysMask == ScheduleRule.WEEKENDS_MASK,
+                                onClick = { daysMask = ScheduleRule.WEEKENDS_MASK },
+                                label = { Text("Weekends", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("preset_weekends")
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val dayLabels = listOf(
+                                DayOfWeek.MONDAY to "Mon",
+                                DayOfWeek.TUESDAY to "Tue",
+                                DayOfWeek.WEDNESDAY to "Wed",
+                                DayOfWeek.THURSDAY to "Thu",
+                                DayOfWeek.FRIDAY to "Fri",
+                                DayOfWeek.SATURDAY to "Sat",
+                                DayOfWeek.SUNDAY to "Sun"
+                            )
+                            dayLabels.forEach { (day, label) ->
+                                val bit = ScheduleRule.dayBit(day)
+                                val isSelected = (daysMask and bit) != 0
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        val next = if (isSelected) daysMask and bit.inv() else daysMask or bit
+                                        if (next != 0) {
+                                            daysMask = next
+                                        }
+                                    },
+                                    label = { Text(label) },
+                                    modifier = Modifier.testTag("day_chip_${day.name}")
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // GPS Rule Options: Map View + Distance Slider in Log Scale
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Location & Geofence",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Tap or drag on the map to define the target position. Use the GPS button to select current location.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        GpsMapView(
+                            latitude = latitude,
+                            longitude = longitude,
+                            radiusMeters = radiusMeters,
+                            onPositionChange = { newLat, newLon ->
+                                latitude = newLat
+                                longitude = newLon
+                            }
+                        )
+
+                        // Distance slider in log scale
+                        val minRadius = 50.0
+                        val maxRadius = 50_000.0
+                        val logMin = ln(minRadius)
+                        val logMax = ln(maxRadius)
+                        val currentLog = ln(radiusMeters.coerceIn(minRadius, maxRadius))
+                        val sliderFraction = ((currentLog - logMin) / (logMax - logMin)).toFloat().coerceIn(0f, 1f)
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Detection Radius",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        text = formatRadius(radiusMeters),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier
+                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                            .testTag("rule_radius_label")
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Slider(
+                                value = sliderFraction,
+                                onValueChange = { fraction ->
+                                    radiusMeters = exp(logMin + fraction.toDouble() * (logMax - logMin))
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("rule_distance_slider")
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("50 m", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("1.5 km", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("50 km", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
@@ -318,15 +460,19 @@ fun ScheduleRuleEditorDialog(
                         listName = selectedList?.name ?: WallpaperList.DEFAULT_LIST_NAME,
                         screenScope = screenScope,
                         priority = initialRule?.priority ?: 999,
-                        startMinuteOfDay = startMinute,
-                        endMinuteOfDay = endMinute,
-                        daysOfWeekMask = daysMask,
+                        ruleType = ruleType,
+                        startMinuteOfDay = if (ruleType == RuleType.TIME) startMinute else 0,
+                        endMinuteOfDay = if (ruleType == RuleType.TIME) endMinute else 0,
+                        daysOfWeekMask = if (ruleType == RuleType.TIME) daysMask else ScheduleRule.ALL_DAYS_MASK,
+                        latitude = if (ruleType == RuleType.GPS) latitude else null,
+                        longitude = if (ruleType == RuleType.GPS) longitude else null,
+                        radiusMeters = if (ruleType == RuleType.GPS) radiusMeters else null,
                         isEnabled = initialRule?.isEnabled ?: true
                     )
                     onSave(rule)
                     onDismiss()
                 },
-                enabled = daysMask != 0 && lists.isNotEmpty(),
+                enabled = lists.isNotEmpty() && if (ruleType == RuleType.TIME) daysMask != 0 else radiusMeters > 0,
                 modifier = Modifier.testTag("save_schedule_rule_button")
             ) {
                 Text("Save Rule")
@@ -403,5 +549,13 @@ fun formatDaysMaskSummary(mask: Int): String {
             labels.filter { (day, _) -> (mask and ScheduleRule.dayBit(day)) != 0 }
                 .joinToString(", ") { it.second }
         }
+    }
+}
+
+fun formatRadius(meters: Double): String {
+    return if (meters < 1000.0) {
+        "%.0f m".format(meters)
+    } else {
+        "%.1f km".format(meters / 1000.0)
     }
 }

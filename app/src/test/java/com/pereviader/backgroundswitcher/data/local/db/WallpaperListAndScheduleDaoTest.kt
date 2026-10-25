@@ -182,6 +182,32 @@ class WallpaperListAndScheduleDaoTest {
     }
 
     @Test
+    fun `ScheduleDao stores and retrieves GPS location rules with geofence parameters`() = runTest {
+        val list1 = WallpaperListEntity(id = "list_loc", name = "Location List")
+        listDao.insertList(list1)
+
+        val gpsRule = ScheduleRuleEntity(
+            id = "r_gps",
+            listId = "list_loc",
+            screenScope = "SHARED",
+            priority = 0,
+            ruleType = "GPS",
+            latitude = 41.3851,
+            longitude = 2.1734,
+            radiusMeters = 250.0,
+            isEnabled = true
+        )
+        scheduleDao.insertOrUpdateRule(gpsRule)
+
+        val retrieved = scheduleDao.getRuleById("r_gps")
+        assertThat(retrieved).isNotNull()
+        assertThat(retrieved!!.ruleType).isEqualTo("GPS")
+        assertThat(retrieved.latitude).isEqualTo(41.3851)
+        assertThat(retrieved.longitude).isEqualTo(2.1734)
+        assertThat(retrieved.radiusMeters).isEqualTo(250.0)
+    }
+
+    @Test
     fun `MIGRATION_7_8 creates new tables, seeds default_list, and migrates selected photos into cross_ref`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val config = SupportSQLiteOpenHelper.Configuration.builder(context)

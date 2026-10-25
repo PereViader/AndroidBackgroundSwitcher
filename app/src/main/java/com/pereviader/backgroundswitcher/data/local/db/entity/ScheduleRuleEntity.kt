@@ -26,9 +26,13 @@ data class ScheduleRuleEntity(
     val listId: String,
     val screenScope: String,
     val priority: Int,
-    val startMinuteOfDay: Int,
-    val endMinuteOfDay: Int,
-    val daysOfWeekMask: Int,
+    val ruleType: String = "TIME",
+    val startMinuteOfDay: Int = 0,
+    val endMinuteOfDay: Int = 0,
+    val daysOfWeekMask: Int = 127,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val radiusMeters: Double? = null,
     val isEnabled: Boolean = true,
     val isDefaultRule: Boolean = false
 )

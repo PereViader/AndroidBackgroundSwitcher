@@ -232,6 +232,15 @@ object DatabaseModule {
         }
     }
 
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE `schedule_rules` ADD COLUMN `ruleType` TEXT NOT NULL DEFAULT 'TIME'")
+            database.execSQL("ALTER TABLE `schedule_rules` ADD COLUMN `latitude` REAL DEFAULT NULL")
+            database.execSQL("ALTER TABLE `schedule_rules` ADD COLUMN `longitude` REAL DEFAULT NULL")
+            database.execSQL("ALTER TABLE `schedule_rules` ADD COLUMN `radiusMeters` REAL DEFAULT NULL")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -247,7 +256,8 @@ object DatabaseModule {
             MIGRATION_5_6,
             MIGRATION_6_7,
             MIGRATION_7_8,
-            MIGRATION_8_9
+            MIGRATION_8_9,
+            MIGRATION_9_10
         ).addCallback(object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)

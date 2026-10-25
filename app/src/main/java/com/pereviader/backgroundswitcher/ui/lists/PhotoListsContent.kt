@@ -83,11 +83,34 @@ fun PhotoListsContent(
     onOpenAddPhotosFromAlbums: (String) -> Unit = {},
     onOpenList: (String) -> Unit = onOpenAddPhotosFromAlbums,
     onOpenListInPreview: (String) -> Unit = {},
+    onEditList: ((WallpaperList) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var listToEdit by remember { mutableStateOf<WallpaperList?>(null) }
     var listToDelete by remember { mutableStateOf<WallpaperList?>(null) }
+
+    if (listToEdit != null && onEditList == null) {
+        val target = listToEdit!!
+        ListPropertiesEditorScreen(
+            list = target,
+            onSave = { newName, screen, order ->
+                onUpdateList(target.id, newName, screen, order)
+                listToEdit = null
+            },
+            onBack = { listToEdit = null },
+            onPreview = {
+                listToEdit = null
+                onOpenListInPreview(target.id)
+            },
+            onDelete = {
+                onDeleteList(target.id)
+                listToEdit = null
+            },
+            modifier = modifier
+        )
+        return
+    }
 
     Column(
         modifier = modifier
@@ -143,7 +166,13 @@ fun PhotoListsContent(
                     wallpaperList = list,
                     activeBadgeLabel = activeBadge,
                     onClick = { onOpenList(list.id) },
-                    onEdit = { listToEdit = list },
+                    onEdit = {
+                        if (onEditList != null) {
+                            onEditList(list)
+                        } else {
+                            listToEdit = list
+                        }
+                    },
                     onDelete = { listToDelete = list },
                     onPreview = { onOpenListInPreview(list.id) }
                 )
@@ -161,21 +190,6 @@ fun PhotoListsContent(
                 showCreateDialog = false
             },
             onDismiss = { showCreateDialog = false }
-        )
-    }
-
-    listToEdit?.let { target ->
-        CreateOrEditListDialog(
-            title = if (target.isDefault) "Edit Default List" else "Edit List Details",
-            initialName = target.name,
-            initialTargetScreen = target.targetScreen,
-            initialRotationOrder = target.rotationOrder,
-            confirmLabel = "Save",
-            onConfirm = { newName, screen, order ->
-                onUpdateList(target.id, newName, screen, order)
-                listToEdit = null
-            },
-            onDismiss = { listToEdit = null }
         )
     }
 
@@ -239,8 +253,6 @@ private fun WallpaperListCard(
     onDelete: () -> Unit,
     onPreview: () -> Unit
 ) {
-    var showMenu by remember { mutableStateOf(false) }
-
     val targetScreenLabel = when (wallpaperList.targetScreen) {
         TargetScreen.HOME -> "Home"
         TargetScreen.LOCK -> "Lock"
@@ -385,58 +397,18 @@ private fun WallpaperListCard(
                     )
                 }
 
-                Box {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier
-                            .size(28.dp)
-                            .testTag("list_menu_${wallpaperList.id}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "List Options",
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Edit List Details") },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                            onClick = {
-                                showMenu = false
-                                onEdit()
-                            },
-                            modifier = Modifier.testTag("list_rename_menu_item_${wallpaperList.id}")
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Open in Preview") },
-                            leadingIcon = { Icon(Icons.Default.PhotoLibrary, contentDescription = null) },
-                            onClick = {
-                                showMenu = false
-                                onPreview()
-                            }
-                        )
-                        if (!wallpaperList.isDefault) {
-                            DropdownMenuItem(
-                                text = { Text("Delete List") },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onDelete()
-                                },
-                                modifier = Modifier.testTag("list_delete_menu_item_${wallpaperList.id}")
-                            )
-                        }
-                    }
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("list_edit_${wallpaperList.id}")
+                        .testTag("list_menu_${wallpaperList.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit List Properties",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }

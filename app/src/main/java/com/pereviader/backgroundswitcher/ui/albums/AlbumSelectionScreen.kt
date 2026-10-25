@@ -31,7 +31,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Cloud
@@ -113,7 +112,6 @@ fun AlbumSelectionScreen(
     var showAddSourceDialog by remember { mutableStateOf(false) }
     var selectedAlbumForDetails by remember { mutableStateOf<Album?>(null) }
     var albumToDelete by remember { mutableStateOf<Album?>(null) }
-    var albumToAssignLists by remember { mutableStateOf<Album?>(null) }
     var photoToAssignLists by remember { mutableStateOf<PhotoItem?>(null) }
 
     val driveFolderLauncher = rememberLauncherForActivityResult(
@@ -159,7 +157,6 @@ fun AlbumSelectionScreen(
                 onSelectAll = { onToggleAlbum(activeAlbum.id, true) },
                 onDeselectAll = { onToggleAlbum(activeAlbum.id, false) },
                 onTogglePhotoSelection = onTogglePhotoSelection,
-                onOpenAssignAlbumLists = { albumToAssignLists = activeAlbum },
                 onOpenAssignPhotoLists = { photo -> photoToAssignLists = photo },
                 modifier = Modifier.fillMaxSize()
             )
@@ -225,7 +222,6 @@ fun AlbumSelectionScreen(
                                 album = album,
                                 onToggle = { isChecked -> onToggleAlbum(album.id, isChecked) },
                                 onClick = { selectedAlbumForDetails = album },
-                                onAssignLists = { albumToAssignLists = album },
                                 onSync = { onSyncGooglePhotosAlbum(album.id) },
                                 onDelete = { albumToDelete = album }
                             )
@@ -259,25 +255,6 @@ fun AlbumSelectionScreen(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                     )
                 }
-            )
-        }
-
-        albumToAssignLists?.let { targetAlbum ->
-            val initialIds = if (targetAlbum.isSelected) {
-                setOf(workingListId)
-            } else {
-                emptySet()
-            }
-            AssignToListsDialog(
-                title = "Assign '${targetAlbum.name}' to Lists",
-                subtitle = "Assign all ${targetAlbum.photoCount} photos in this album to selected lists:",
-                lists = lists,
-                initialSelectedListIds = initialIds,
-                onConfirm = { selectedListIds ->
-                    onSetAlbumLists(targetAlbum.id, selectedListIds)
-                },
-                onCreateList = onCreateList,
-                onDismiss = { albumToAssignLists = null }
             )
         }
 
@@ -568,7 +545,6 @@ private fun AlbumCard(
     album: Album,
     onToggle: (Boolean) -> Unit,
     onClick: () -> Unit,
-    onAssignLists: () -> Unit,
     onSync: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -689,24 +665,12 @@ private fun AlbumCard(
                     modifier = Modifier.weight(1f)
                 )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = onAssignLists,
-                        modifier = Modifier
-                            .size(24.dp)
-                            .testTag("album_assign_lists_${album.id}")
+                if (isCloudAlbum) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
-                            contentDescription = "Assign Album to Lists",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    if (isCloudAlbum) {
                         if (!album.sourceUrl.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.width(4.dp))
                             IconButton(
                                 onClick = onSync,
                                 modifier = Modifier
@@ -721,7 +685,6 @@ private fun AlbumCard(
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
                         IconButton(
                             onClick = onDelete,
                             modifier = Modifier
@@ -754,7 +717,6 @@ private fun AlbumPhotosFullScreen(
     onSelectAll: () -> Unit,
     onDeselectAll: () -> Unit,
     onTogglePhotoSelection: (photoId: String, isSelected: Boolean) -> Unit,
-    onOpenAssignAlbumLists: () -> Unit,
     onOpenAssignPhotoLists: (PhotoItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -789,17 +751,6 @@ private fun AlbumPhotosFullScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                IconButton(
-                    onClick = onOpenAssignAlbumLists,
-                    modifier = Modifier.testTag("assign_album_lists_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
-                        contentDescription = "Assign to Lists",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-
                 OutlinedButton(
                     onClick = onDeselectAll,
                     modifier = Modifier.testTag("deselect_all_button")

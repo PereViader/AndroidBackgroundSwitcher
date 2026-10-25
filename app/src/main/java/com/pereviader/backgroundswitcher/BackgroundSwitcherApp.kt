@@ -17,6 +17,15 @@ class BackgroundSwitcherApp : Application(), Configuration.Provider, ImageLoader
     @Inject
     lateinit var imageLoader: ImageLoader
 
+    override fun onCreate() {
+        super.onCreate()
+        org.osmdroid.config.Configuration.getInstance().apply {
+            userAgentValue = packageName
+            osmdroidBasePath = cacheDir
+            osmdroidTileCache = java.io.File(cacheDir, "osm_tiles")
+        }
+    }
+
     override fun newImageLoader(): ImageLoader = imageLoader
 
     override val workManagerConfiguration: Configuration

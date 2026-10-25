@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,6 +78,29 @@ fun ListsAndScheduleScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedSubTab by rememberSaveable { mutableIntStateOf(initialSubTab) }
+    var editingListId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editingList = lists.find { it.id == editingListId }
+
+    if (editingList != null) {
+        ListPropertiesEditorScreen(
+            list = editingList,
+            onSave = { newName, screen, order ->
+                onUpdateList(editingList.id, newName, screen, order)
+                editingListId = null
+            },
+            onBack = { editingListId = null },
+            onPreview = {
+                editingListId = null
+                onOpenListInPreview(editingList.id)
+            },
+            onDelete = {
+                onDeleteList(editingList.id)
+                editingListId = null
+            },
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -142,6 +166,7 @@ fun ListsAndScheduleScreen(
                 onOpenAddPhotosFromAlbums = onOpenAddPhotosFromAlbums,
                 onOpenList = onOpenList,
                 onOpenListInPreview = onOpenListInPreview,
+                onEditList = { editingListId = it.id },
                 modifier = Modifier.weight(1f)
             )
         } else {

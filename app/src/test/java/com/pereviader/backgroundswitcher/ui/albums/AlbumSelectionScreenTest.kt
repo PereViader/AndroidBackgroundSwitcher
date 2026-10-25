@@ -202,7 +202,7 @@ class AlbumSelectionScreenTest {
     }
 
     @Test
-    fun `working list chip bar switches active list and Assign to Lists button assigns album to multiple lists`() {
+    fun `working list chip bar switches active list and assign to lists icon is removed from album card and fullscreen view`() {
         val defaultList = com.pereviader.backgroundswitcher.core.model.WallpaperList(
             id = "default_list",
             name = "My Wallpapers",
@@ -217,8 +217,6 @@ class AlbumSelectionScreenTest {
         )
         val photosFlow = MutableStateFlow(listOf(samplePhoto1, samplePhoto2))
         var selectedWorkingListId = "default_list"
-        var assignedAlbumId: String? = null
-        var assignedListIds: Set<String>? = null
 
         composeTestRule.setContent {
             AlbumSelectionScreen(
@@ -229,29 +227,23 @@ class AlbumSelectionScreenTest {
                 getPhotosForAlbum = { photosFlow },
                 lists = listOf(defaultList, workList),
                 workingListId = selectedWorkingListId,
-                onSelectWorkingList = { selectedWorkingListId = it },
-                onSetAlbumLists = { albumId, listIds ->
-                    assignedAlbumId = albumId
-                    assignedListIds = listIds
-                }
+                onSelectWorkingList = { selectedWorkingListId = it }
             )
         }
 
+        // Verify assign icon does not exist on album card in albums list
+        composeTestRule.onNodeWithTag("album_assign_lists_album_1").assertDoesNotExist()
+
         // Open Nature album
         composeTestRule.onNodeWithText("Nature").performClick()
+
+        // Verify assign icon does not exist in album photos fullscreen view
+        composeTestRule.onNodeWithTag("assign_album_lists_button").assertDoesNotExist()
 
         // Working list dropdown can be opened and list chosen
         composeTestRule.onNodeWithTag("working_list_dropdown_button").performClick()
         composeTestRule.onNodeWithTag("working_list_option_list_work").performClick()
         assertThat(selectedWorkingListId).isEqualTo("list_work")
-
-        // Click "Assign to Lists..." button and select Work Focus in dialog
-        composeTestRule.onNodeWithTag("assign_album_lists_button").performClick()
-        composeTestRule.onNodeWithTag("assign_list_row_list_work").performClick()
-        composeTestRule.onNodeWithTag("assign_lists_save_button").performClick()
-
-        assertThat(assignedAlbumId).isEqualTo("album_1")
-        assertThat(assignedListIds).contains("list_work")
     }
 
     @Test

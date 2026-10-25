@@ -118,19 +118,28 @@ class MainViewModel @Inject constructor(
         ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _clockTick = MutableStateFlow(LocalDateTime.now())
+    private val _currentLocation = MutableStateFlow<Pair<Double, Double>?>(null)
+    val currentLocation: StateFlow<Pair<Double, Double>?> = _currentLocation.asStateFlow()
+
+    fun updateCurrentLocation(latitude: Double, longitude: Double) {
+        _currentLocation.value = latitude to longitude
+    }
 
     val activeResolutionShared: StateFlow<ActiveScheduleResolution> = combine(
         scheduleRulesShared,
         settings,
         lists,
-        _clockTick
-    ) { rules, currentSettings, allLists, now ->
+        _clockTick,
+        _currentLocation
+    ) { rules, currentSettings, allLists, now, location ->
         val nonEmpty = allLists.filter { it.photoCount > 0 }.map { it.id }.toSet().ifEmpty { null }
         scheduleEvaluator.evaluateActiveList(
             rules = rules,
             screenScope = ScheduleScreenScope.SHARED,
             fallbackListId = currentSettings.fallbackListIdShared,
             dateTime = now,
+            currentLatitude = location?.first,
+            currentLongitude = location?.second,
             nonEmptyListIds = nonEmpty
         )
     }.stateIn(
@@ -148,14 +157,17 @@ class MainViewModel @Inject constructor(
         scheduleRulesHome,
         settings,
         lists,
-        _clockTick
-    ) { rules, currentSettings, allLists, now ->
+        _clockTick,
+        _currentLocation
+    ) { rules, currentSettings, allLists, now, location ->
         val nonEmpty = allLists.filter { it.photoCount > 0 }.map { it.id }.toSet().ifEmpty { null }
         scheduleEvaluator.evaluateActiveList(
             rules = rules,
             screenScope = ScheduleScreenScope.HOME,
             fallbackListId = currentSettings.fallbackListIdHome,
             dateTime = now,
+            currentLatitude = location?.first,
+            currentLongitude = location?.second,
             nonEmptyListIds = nonEmpty
         )
     }.stateIn(
@@ -173,14 +185,17 @@ class MainViewModel @Inject constructor(
         scheduleRulesLock,
         settings,
         lists,
-        _clockTick
-    ) { rules, currentSettings, allLists, now ->
+        _clockTick,
+        _currentLocation
+    ) { rules, currentSettings, allLists, now, location ->
         val nonEmpty = allLists.filter { it.photoCount > 0 }.map { it.id }.toSet().ifEmpty { null }
         scheduleEvaluator.evaluateActiveList(
             rules = rules,
             screenScope = ScheduleScreenScope.LOCK,
             fallbackListId = currentSettings.fallbackListIdLock,
             dateTime = now,
+            currentLatitude = location?.first,
+            currentLongitude = location?.second,
             nonEmptyListIds = nonEmpty
         )
     }.stateIn(

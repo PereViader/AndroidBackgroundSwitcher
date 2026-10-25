@@ -332,7 +332,72 @@ class ListsAndScheduleScreenTest {
     }
 
     @Test
-    fun `default list cannot be deleted from lists menu`() {
+    fun `pencil icon opens list properties editor in full screen subview with back button`() {
+        var updatedName: String? = null
+
+        composeTestRule.setContent {
+            ListsAndScheduleScreen(
+                lists = listOf(defaultList, workList),
+                isSeparateScreensMode = false,
+                rulesShared = emptyList(),
+                rulesHome = emptyList(),
+                rulesLock = emptyList(),
+                resolutionShared = defaultRes,
+                resolutionHome = defaultRes.copy(screenScope = ScheduleScreenScope.HOME),
+                resolutionLock = defaultRes.copy(screenScope = ScheduleScreenScope.LOCK),
+                fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
+                fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
+                fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
+                observePhotosInList = { MutableStateFlow(emptyList()) },
+                onCreateList = {},
+                onRenameList = { _, _ -> },
+                onUpdateList = { _, name, _, _ -> updatedName = name },
+                onDeleteList = {},
+                onRemovePhotoFromList = { _, _ -> },
+                onToggleSeparateScreensMode = {},
+                onSaveRule = {},
+                onDeleteRule = {},
+                onToggleRuleEnabled = { _, _ -> },
+                onMoveRulePriority = { _, _, _ -> },
+                onSetFallbackList = { _, _ -> },
+                onCopyScheduleScope = { _, _ -> }
+            )
+        }
+
+        // Click pencil icon on workList card
+        composeTestRule.onNodeWithTag("list_edit_list_work").performClick()
+
+        // Full screen subview is displayed and segmented tabs are hidden
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("lists_schedule_segmented_row").assertDoesNotExist()
+
+        // Options displayed in full screen
+        composeTestRule.onNodeWithTag("list_name_input").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("target_screen_chip_home").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("target_screen_chip_lock").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("target_screen_chip_both").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("rotation_mode_chip_random").assertExists()
+        composeTestRule.onNodeWithTag("list_delete_button").assertExists()
+
+        // Edit name and save
+        composeTestRule.onNodeWithTag("list_name_input").performTextReplacement("Deep Work")
+        composeTestRule.onNodeWithTag("save_list_properties_button").performClick()
+        assertThat(updatedName).isEqualTo("Deep Work")
+
+        // Subview is closed, returns to lists screen
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("lists_schedule_segmented_row").assertIsDisplayed()
+
+        // Open subview again and verify Back button returns without saving
+        composeTestRule.onNodeWithTag("list_edit_list_work").performClick()
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("list_properties_back_button").performClick()
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("lists_schedule_segmented_row").assertIsDisplayed()
+    }
+
+    @Test
+    fun `default list properties editor does not show delete button`() {
         composeTestRule.setContent {
             ListsAndScheduleScreen(
                 lists = listOf(defaultList),
@@ -361,9 +426,79 @@ class ListsAndScheduleScreenTest {
             )
         }
 
-        // Open menu on default list card
-        composeTestRule.onNodeWithTag("list_menu_${defaultList.id}").performClick()
-        composeTestRule.onNodeWithText("Edit List Details").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Delete List").assertDoesNotExist()
+        // Open list properties on default list via pencil icon
+        composeTestRule.onNodeWithTag("list_edit_${defaultList.id}").performClick()
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Default List Properties").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("list_delete_button").assertDoesNotExist()
+    }
+
+    @Test
+    fun `adding a rule allows selecting GPS rule with map view, current location button, and log distance slider`() {
+        var savedRule: ScheduleRule? = null
+
+        composeTestRule.setContent {
+            ListsAndScheduleScreen(
+                lists = listOf(defaultList, workList),
+                isSeparateScreensMode = false,
+                rulesShared = emptyList(),
+                rulesHome = emptyList(),
+                rulesLock = emptyList(),
+                resolutionShared = defaultRes,
+                resolutionHome = defaultRes.copy(screenScope = ScheduleScreenScope.HOME),
+                resolutionLock = defaultRes.copy(screenScope = ScheduleScreenScope.LOCK),
+                fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
+                fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
+                fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
+                observePhotosInList = { MutableStateFlow(emptyList()) },
+                onCreateList = {},
+                onRenameList = { _, _ -> },
+                onDeleteList = {},
+                onRemovePhotoFromList = { _, _ -> },
+                onToggleSeparateScreensMode = {},
+                onSaveRule = { savedRule = it },
+                onDeleteRule = {},
+                onToggleRuleEnabled = { _, _ -> },
+                onMoveRulePriority = { _, _, _ -> },
+                onSetFallbackList = { _, _ -> },
+                onCopyScheduleScope = { _, _ -> }
+            )
+        }
+
+        // Switch to Priority Schedule segment
+        composeTestRule.onNodeWithTag("segment_priority_schedule").performClick()
+
+        // Open Add Rule dialog
+        composeTestRule.onNodeWithTag("add_schedule_rule_button").performClick()
+        composeTestRule.onNodeWithTag("schedule_rule_editor_dialog").assertIsDisplayed()
+
+        // Horizontal two option selector exists: Time Based (default on left) and GPS
+        composeTestRule.onNodeWithTag("rule_type_selector").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("rule_type_time").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("rule_type_gps").assertIsDisplayed()
+
+        // Switch to GPS based rule
+        composeTestRule.onNodeWithTag("rule_type_gps").performClick()
+
+        // Map view is displayed in dialog hierarchy
+        composeTestRule.onNodeWithTag("rule_map_view").assertExists()
+
+        // Current location button is present
+        composeTestRule.onNodeWithTag("rule_my_location_button").assertExists()
+
+        // Distance slider in log scale is displayed
+        composeTestRule.onNodeWithTag("rule_distance_slider").assertExists()
+        composeTestRule.onNodeWithTag("rule_radius_label").assertExists()
+
+        // Save rule
+        composeTestRule.onNodeWithTag("save_schedule_rule_button").performClick()
+        composeTestRule.onNodeWithTag("schedule_rule_editor_dialog").assertDoesNotExist()
+
+        assertThat(savedRule).isNotNull()
+        assertThat(savedRule!!.ruleType.name).isEqualTo("GPS")
+        assertThat(savedRule!!.latitude).isNotNull()
+        assertThat(savedRule!!.longitude).isNotNull()
+        assertThat(savedRule!!.radiusMeters).isNotNull()
+        assertThat(savedRule!!.radiusMeters).isGreaterThan(0.0)
     }
 }

@@ -1,6 +1,7 @@
 package com.pereviader.backgroundswitcher.domain.scheduler
 
 import com.google.common.truth.Truth.assertThat
+import com.pereviader.backgroundswitcher.core.model.RuleType
 import com.pereviader.backgroundswitcher.core.model.ScheduleRule
 import com.pereviader.backgroundswitcher.core.model.ScheduleScreenScope
 import com.pereviader.backgroundswitcher.core.model.WallpaperList
@@ -260,5 +261,117 @@ class ScheduleEvaluatorTest {
         assertThat(transitionToEnd.delayMillis).isEqualTo(7L * 60L * 60L * 1000L)
         assertThat(transitionToEnd.previousListId).isEqualTo("list_work")
         assertThat(transitionToEnd.nextListId).isEqualTo(WallpaperList.DEFAULT_LIST_ID)
+    }
+
+    @Test
+    fun `haversineDistanceMeters accurately calculates distance between coordinates`() {
+        // Distance between Barcelona (41.3851, 2.1734) and Madrid (40.4168, -3.7038) is ~505 km
+        val distance = evaluator.haversineDistanceMeters(41.3851, 2.1734, 40.4168, -3.7038)
+        assertThat(distance).isGreaterThan(500_000.0)
+        assertThat(distance).isLessThan(510_000.0)
+
+        // Same point has 0 distance
+        val zeroDist = evaluator.haversineDistanceMeters(41.3851, 2.1734, 41.3851, 2.1734)
+        assertThat(zeroDist).isWithin(0.001).of(0.0)
+    }
+
+    @Test
+    fun `GPS rule matches when user is inside geofence radius and returns false when outside`() {
+        val homeGpsRule = ScheduleRule(
+            id = "rule_home_gps",
+            listId = "list_home",
+            listName = "Home List",
+            screenScope = ScheduleScreenScope.SHARED,
+            priority = 0,
+            ruleType = RuleType.GPS,
+            latitude = 41.3851,
+            longitude = 2.1734,
+            radiusMeters = 300.0,
+            isEnabled = true
+        )
+
+        val dummyDateTime = LocalDateTime.of(2026, 3, 25, 12, 0)
+
+        // Inside geofence: ~15 meters away
+        val insideResolution = evaluator.evaluateActiveList(
+            rules = listOf(homeGpsRule),
+            screenScope = ScheduleScreenScope.SHARED,
+            fallbackListId = WallpaperList.DEFAULT_LIST_ID,
+            dateTime = dummyDateTime,
+            currentLatitude = 41.3852,
+            currentLongitude = 2.1735
+        )
+        assertThat(insideResolution.activeListId).isEqualTo("list_home")
+        assertThat(insideResolution.matchedRuleId).isEqualTo("rule_home_gps")
+        assertThat(insideResolution.isFallback).isFalse()
+
+        // Outside geofence: ~760 meters away
+        val outsideResolution = evaluator.evaluateActiveList(
+            rules = listOf(homeGpsRule),
+            screenScope = ScheduleScreenScope.SHARED,
+            fallbackListId = WallpaperList.DEFAULT_LIST_ID,
+            dateTime = dummyDateTime,
+            currentLatitude = 41.3900,
+            currentLongitude = 2.1800
+        )
+        assertThat(outsideResolution.activeListId).isEqualTo(WallpaperList.DEFAULT_LIST_ID)
+        assertThat(outsideResolution.matchedRuleId).isNull()
+        assertThat(outsideResolution.isFallback).isTrue()
+
+        // Null location: cannot match GPS rule, falls back
+        val nullLocResolution = evaluator.evaluateActiveList(
+            rules = listOf(homeGpsRule),
+            screenScope = ScheduleScreenScope.SHARED,
+            fallbackListId = WallpaperList.DEFAULT_LIST_ID,
+            dateTime = dummyDateTime,
+            currentLatitude = null,
+            currentLongitude = null
+        )
+        assertThat(nullLocResolution.activeListId).isEqualTo(WallpaperList.DEFAULT_LIST_ID)
+        assertThat(nullLocResolution.matchedRuleId).isNull()
+        assertThat(nullLocResolution.isFallback).isTrue()
+    }
+
+    @Test
+    fun `priority evaluation with mixed GPS and Time rules respects order and location`() {
+        val homeGpsRule = ScheduleRule(
+            id = "rule_home_gps",
+            listId = "list_home",
+            listName = "Home List",
+            screenScope = ScheduleScreenScope.SHARED,
+            priority = 0,
+            ruleType = RuleType.GPS,
+            latitude = 41.3851,
+            longitude = 2.1734,
+            radiusMeters = 200.0,
+            isEnabled = true
+        )
+        // workRule has priority 0 in its definition, let's give it priority 1 for this test
+        val workTimeRule = workRule.copy(priority = 1)
+        val wednesday1100 = LocalDateTime.of(2026, 3, 25, 11, 0) // inside work hours (09:00 - 17:00)
+
+        // Case 1: User is at home during work hours -> Top priority GPS rule wins
+        val atHomeResolution = evaluator.evaluateActiveList(
+            rules = listOf(homeGpsRule, workTimeRule),
+            screenScope = ScheduleScreenScope.SHARED,
+            fallbackListId = WallpaperList.DEFAULT_LIST_ID,
+            dateTime = wednesday1100,
+            currentLatitude = 41.3851,
+            currentLongitude = 2.1734
+        )
+        assertThat(atHomeResolution.activeListId).isEqualTo("list_home")
+        assertThat(atHomeResolution.matchedRuleId).isEqualTo("rule_home_gps")
+
+        // Case 2: User is away from home during work hours -> GPS rule fails, Priority 1 Time rule matches
+        val atOfficeResolution = evaluator.evaluateActiveList(
+            rules = listOf(homeGpsRule, workTimeRule),
+            screenScope = ScheduleScreenScope.SHARED,
+            fallbackListId = WallpaperList.DEFAULT_LIST_ID,
+            dateTime = wednesday1100,
+            currentLatitude = 41.4000,
+            currentLongitude = 2.2000
+        )
+        assertThat(atOfficeResolution.activeListId).isEqualTo("list_work")
+        assertThat(atOfficeResolution.matchedRuleId).isEqualTo("rule_work")
     }
 }
