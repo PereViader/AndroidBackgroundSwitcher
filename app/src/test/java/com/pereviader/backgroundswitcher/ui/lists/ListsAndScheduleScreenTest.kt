@@ -52,13 +52,9 @@ class ListsAndScheduleScreenTest {
     )
 
     @Test
-    fun `photo lists segment displays lists, creates new list via dialog, and opening list opens albums tab`() {
-        var createdListName: String? = null
-        var openedListId: String? = null
-        val samplePhoto = PhotoItem(id = "p1", albumId = "a1", uri = "content://1")
-
+    fun `rules screen shows schedule directly and segmented row and photo lists content do not exist`() {
         composeTestRule.setContent {
-            ListsAndScheduleScreen(
+            RulesScreen(
                 lists = listOf(defaultList, workList),
                 isSeparateScreensMode = false,
                 rulesShared = emptyList(),
@@ -70,46 +66,28 @@ class ListsAndScheduleScreenTest {
                 fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
-                observePhotosInList = { MutableStateFlow(listOf(samplePhoto)) },
-                onCreateList = { createdListName = it },
-                onRenameList = { _, _ -> },
-                onDeleteList = {},
-                onRemovePhotoFromList = { _, _ -> },
                 onToggleSeparateScreensMode = {},
                 onSaveRule = {},
                 onDeleteRule = {},
                 onToggleRuleEnabled = { _, _ -> },
-                onMoveRulePriority = { _, _, _ -> },
                 onSetFallbackList = { _, _ -> },
-                onCopyScheduleScope = { _, _ -> },
-                onOpenAddPhotosFromAlbums = { openedListId = it }
+                onCopyScheduleScope = { _, _ -> }
             )
         }
 
-        // Title has no count (Subagent 2)
-        composeTestRule.onNodeWithText("Your Photo Lists").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Your Photo Lists (2)").assertDoesNotExist()
+        // Segmented control is removed
+        composeTestRule.onNodeWithTag("lists_schedule_segmented_row").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("segment_photo_lists").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("segment_priority_schedule").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Your Photo Lists").assertDoesNotExist()
 
-        // Photo Lists segment is active by default
-        composeTestRule.onNodeWithText("My Wallpapers").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Work Focus").assertIsDisplayed()
-
-        // Create a new list
-        composeTestRule.onNodeWithTag("create_list_button").performClick()
-        composeTestRule.onNodeWithTag("list_name_input").performTextReplacement("Night Minimal")
-        composeTestRule.onNodeWithTag("confirm_list_dialog_button").performClick()
-        assertThat(createdListName).isEqualTo("Night Minimal")
-
-        // Click a list card to open it (opens albums tab with that list selected, Subagent 1)
-        composeTestRule.onNodeWithTag("list_card_list_work").performClick()
-        assertThat(openedListId).isEqualTo("list_work")
-
-        // Nested inspector view does not exist (Subagent 1)
-        composeTestRule.onNodeWithTag("list_inspector_view").assertDoesNotExist()
+        // Rules functionality (Priority Schedule) is directly visible
+        composeTestRule.onNodeWithText("Priority Schedule").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("add_schedule_rule_button").assertIsDisplayed()
     }
 
     @Test
-    fun `switching to Priority Schedule segment shows rules, active indicator within rule, single add button, and supports priority reordering`() {
+    fun `rules screen shows rules, active indicator within rule, single add button, and supports priority reordering`() {
         var movedRuleId: String? = null
         var movedUpFlag: Boolean? = null
 
@@ -135,7 +113,7 @@ class ListsAndScheduleScreenTest {
         )
 
         composeTestRule.setContent {
-            ListsAndScheduleScreen(
+            RulesScreen(
                 lists = listOf(defaultList, workList),
                 isSeparateScreensMode = false,
                 rulesShared = listOf(rule1, rule2),
@@ -152,11 +130,6 @@ class ListsAndScheduleScreenTest {
                 fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
-                observePhotosInList = { MutableStateFlow(emptyList()) },
-                onCreateList = {},
-                onRenameList = { _, _ -> },
-                onDeleteList = {},
-                onRemovePhotoFromList = { _, _ -> },
                 onToggleSeparateScreensMode = {},
                 onSaveRule = {},
                 onDeleteRule = {},
@@ -169,9 +142,6 @@ class ListsAndScheduleScreenTest {
                 onCopyScheduleScope = { _, _ -> }
             )
         }
-
-        // Switch to Priority Schedule segment
-        composeTestRule.onNodeWithTag("segment_priority_schedule").performClick()
 
         // Single Add Rule button is displayed in header
         composeTestRule.onNodeWithTag("add_schedule_rule_button").assertIsDisplayed()
@@ -235,7 +205,7 @@ class ListsAndScheduleScreenTest {
         )
 
         composeTestRule.setContent {
-            ListsAndScheduleScreen(
+            RulesScreen(
                 lists = listOf(defaultList, workList),
                 isSeparateScreensMode = true,
                 rulesShared = emptyList(),
@@ -247,11 +217,6 @@ class ListsAndScheduleScreenTest {
                 fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
-                observePhotosInList = { MutableStateFlow(emptyList()) },
-                onCreateList = {},
-                onRenameList = { _, _ -> },
-                onDeleteList = {},
-                onRemovePhotoFromList = { _, _ -> },
                 onToggleSeparateScreensMode = {},
                 onSaveRule = {},
                 onDeleteRule = {},
@@ -261,9 +226,6 @@ class ListsAndScheduleScreenTest {
                 onCopyScheduleScope = { _, _ -> }
             )
         }
-
-        // Switch to Priority Schedule segment
-        composeTestRule.onNodeWithTag("segment_priority_schedule").performClick()
 
         // Home Screen tab is active initially
         composeTestRule.onNodeWithTag("separate_screen_tabs").assertIsDisplayed()
@@ -285,7 +247,7 @@ class ListsAndScheduleScreenTest {
         var selectedFallback: String? = null
 
         composeTestRule.setContent {
-            ListsAndScheduleScreen(
+            RulesScreen(
                 lists = listOf(defaultList, workList),
                 isSeparateScreensMode = false,
                 rulesShared = emptyList(),
@@ -297,11 +259,6 @@ class ListsAndScheduleScreenTest {
                 fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
-                observePhotosInList = { MutableStateFlow(emptyList()) },
-                onCreateList = {},
-                onRenameList = { _, _ -> },
-                onDeleteList = {},
-                onRemovePhotoFromList = { _, _ -> },
                 onToggleSeparateScreensMode = {},
                 onSaveRule = {},
                 onDeleteRule = {},
@@ -311,8 +268,6 @@ class ListsAndScheduleScreenTest {
                 onCopyScheduleScope = { _, _ -> }
             )
         }
-
-        composeTestRule.onNodeWithTag("segment_priority_schedule").performClick()
 
         // Default rule card is displayed
         composeTestRule.onNodeWithTag("schedule_lazy_column")
@@ -332,113 +287,11 @@ class ListsAndScheduleScreenTest {
     }
 
     @Test
-    fun `pencil icon opens list properties editor in full screen subview with back button`() {
-        var updatedName: String? = null
-
-        composeTestRule.setContent {
-            ListsAndScheduleScreen(
-                lists = listOf(defaultList, workList),
-                isSeparateScreensMode = false,
-                rulesShared = emptyList(),
-                rulesHome = emptyList(),
-                rulesLock = emptyList(),
-                resolutionShared = defaultRes,
-                resolutionHome = defaultRes.copy(screenScope = ScheduleScreenScope.HOME),
-                resolutionLock = defaultRes.copy(screenScope = ScheduleScreenScope.LOCK),
-                fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
-                fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
-                fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
-                observePhotosInList = { MutableStateFlow(emptyList()) },
-                onCreateList = {},
-                onRenameList = { _, _ -> },
-                onUpdateList = { _, name, _, _ -> updatedName = name },
-                onDeleteList = {},
-                onRemovePhotoFromList = { _, _ -> },
-                onToggleSeparateScreensMode = {},
-                onSaveRule = {},
-                onDeleteRule = {},
-                onToggleRuleEnabled = { _, _ -> },
-                onMoveRulePriority = { _, _, _ -> },
-                onSetFallbackList = { _, _ -> },
-                onCopyScheduleScope = { _, _ -> }
-            )
-        }
-
-        // Click pencil icon on workList card
-        composeTestRule.onNodeWithTag("list_edit_list_work").performClick()
-
-        // Full screen subview is displayed and segmented tabs are hidden
-        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("lists_schedule_segmented_row").assertDoesNotExist()
-
-        // Options displayed in full screen
-        composeTestRule.onNodeWithTag("list_name_input").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("target_screen_chip_home").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("target_screen_chip_lock").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("target_screen_chip_both").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("rotation_mode_chip_random").assertExists()
-        composeTestRule.onNodeWithTag("list_delete_button").assertExists()
-
-        // Edit name and save
-        composeTestRule.onNodeWithTag("list_name_input").performTextReplacement("Deep Work")
-        composeTestRule.onNodeWithTag("save_list_properties_button").performClick()
-        assertThat(updatedName).isEqualTo("Deep Work")
-
-        // Subview is closed, returns to lists screen
-        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertDoesNotExist()
-        composeTestRule.onNodeWithTag("lists_schedule_segmented_row").assertIsDisplayed()
-
-        // Open subview again and verify Back button returns without saving
-        composeTestRule.onNodeWithTag("list_edit_list_work").performClick()
-        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("list_properties_back_button").performClick()
-        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertDoesNotExist()
-        composeTestRule.onNodeWithTag("lists_schedule_segmented_row").assertIsDisplayed()
-    }
-
-    @Test
-    fun `default list properties editor does not show delete button`() {
-        composeTestRule.setContent {
-            ListsAndScheduleScreen(
-                lists = listOf(defaultList),
-                isSeparateScreensMode = false,
-                rulesShared = emptyList(),
-                rulesHome = emptyList(),
-                rulesLock = emptyList(),
-                resolutionShared = defaultRes,
-                resolutionHome = defaultRes.copy(screenScope = ScheduleScreenScope.HOME),
-                resolutionLock = defaultRes.copy(screenScope = ScheduleScreenScope.LOCK),
-                fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
-                fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
-                fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
-                observePhotosInList = { MutableStateFlow(emptyList()) },
-                onCreateList = {},
-                onRenameList = { _, _ -> },
-                onDeleteList = {},
-                onRemovePhotoFromList = { _, _ -> },
-                onToggleSeparateScreensMode = {},
-                onSaveRule = {},
-                onDeleteRule = {},
-                onToggleRuleEnabled = { _, _ -> },
-                onMoveRulePriority = { _, _, _ -> },
-                onSetFallbackList = { _, _ -> },
-                onCopyScheduleScope = { _, _ -> }
-            )
-        }
-
-        // Open list properties on default list via pencil icon
-        composeTestRule.onNodeWithTag("list_edit_${defaultList.id}").performClick()
-        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Default List Properties").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("list_delete_button").assertDoesNotExist()
-    }
-
-    @Test
     fun `adding a rule allows selecting GPS rule with map view, current location button, and log distance slider`() {
         var savedRule: ScheduleRule? = null
 
         composeTestRule.setContent {
-            ListsAndScheduleScreen(
+            RulesScreen(
                 lists = listOf(defaultList, workList),
                 isSeparateScreensMode = false,
                 rulesShared = emptyList(),
@@ -450,11 +303,6 @@ class ListsAndScheduleScreenTest {
                 fallbackListIdShared = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdHome = WallpaperList.DEFAULT_LIST_ID,
                 fallbackListIdLock = WallpaperList.DEFAULT_LIST_ID,
-                observePhotosInList = { MutableStateFlow(emptyList()) },
-                onCreateList = {},
-                onRenameList = { _, _ -> },
-                onDeleteList = {},
-                onRemovePhotoFromList = { _, _ -> },
                 onToggleSeparateScreensMode = {},
                 onSaveRule = { savedRule = it },
                 onDeleteRule = {},
@@ -464,9 +312,6 @@ class ListsAndScheduleScreenTest {
                 onCopyScheduleScope = { _, _ -> }
             )
         }
-
-        // Switch to Priority Schedule segment
-        composeTestRule.onNodeWithTag("segment_priority_schedule").performClick()
 
         // Open Add Rule dialog
         composeTestRule.onNodeWithTag("add_schedule_rule_button").performClick()

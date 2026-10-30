@@ -14,6 +14,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Preview
@@ -38,7 +39,7 @@ import androidx.core.content.ContextCompat
 import com.pereviader.backgroundswitcher.core.wallpaper.LiveWallpaperService
 import com.pereviader.backgroundswitcher.data.mediastore.MediaStoreContentObserver
 import com.pereviader.backgroundswitcher.ui.albums.AlbumSelectionScreen
-import com.pereviader.backgroundswitcher.ui.lists.ListsAndScheduleScreen
+import com.pereviader.backgroundswitcher.ui.lists.RulesScreen
 import com.pereviader.backgroundswitcher.ui.preview.PreviewScreen
 import com.pereviader.backgroundswitcher.ui.settings.SettingsScreen
 import com.pereviader.backgroundswitcher.ui.theme.BackgroundSwitcherTheme
@@ -192,8 +193,8 @@ fun MainAppContent(viewModel: MainViewModel) {
                         }
                         selectedTab = 1
                     },
-                    icon = { Icon(Icons.Default.PhotoLibrary, contentDescription = "Albums") },
-                    label = { Text("Albums") }
+                    icon = { Icon(Icons.Default.PhotoLibrary, contentDescription = "Lists") },
+                    label = { Text("Lists") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 2,
@@ -203,8 +204,8 @@ fun MainAppContent(viewModel: MainViewModel) {
                         }
                         selectedTab = 2
                     },
-                    icon = { Icon(Icons.Default.CollectionsBookmark, contentDescription = "Lists & Schedule") },
-                    label = { Text("Lists & Schedule") }
+                    icon = { Icon(Icons.AutoMirrored.Filled.Rule, contentDescription = "Rules") },
+                    label = { Text("Rules") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 3,
@@ -270,9 +271,16 @@ fun MainAppContent(viewModel: MainViewModel) {
                 onSetPhotoLists = { photoId, targetIds -> viewModel.setPhotoLists(photoId, targetIds) },
                 onSetAlbumLists = { albumId, targetIds -> viewModel.setAlbumLists(albumId, targetIds) },
                 onCreateList = { name, onCreated -> viewModel.createList(name, onCreated) },
+                onCreateListWithDetails = { name, screen, order -> viewModel.createList(name, screen, order) },
+                onUpdateList = { listId, newName, screen, order -> viewModel.updateListDetails(listId, newName, screen, order) },
+                onDeleteList = { listId -> viewModel.deleteList(listId) },
+                onOpenListInPreview = { listId ->
+                    viewModel.selectPreviewList(listId)
+                    selectedTab = 0
+                },
                 modifier = Modifier.padding(innerPadding)
             )
-            2 -> ListsAndScheduleScreen(
+            2 -> RulesScreen(
                 lists = lists,
                 isSeparateScreensMode = settings.isSeparateScreensMode,
                 rulesShared = rulesShared,
@@ -284,15 +292,6 @@ fun MainAppContent(viewModel: MainViewModel) {
                 fallbackListIdShared = settings.fallbackListIdShared,
                 fallbackListIdHome = settings.fallbackListIdHome,
                 fallbackListIdLock = settings.fallbackListIdLock,
-                observePhotosInList = { listId -> viewModel.observePhotosInList(listId) },
-                onCreateList = { name -> viewModel.createList(name) },
-                onRenameList = { listId, newName -> viewModel.renameList(listId, newName) },
-                onUpdateList = { listId, newName, screen, order -> viewModel.updateListDetails(listId, newName, screen, order) },
-                onCreateListWithDetails = { name, screen, order -> viewModel.createList(name, screen, order) },
-                onDeleteList = { listId -> viewModel.deleteList(listId) },
-                onRemovePhotoFromList = { listId, photoId ->
-                    viewModel.removePhotosFromList(listId, listOf(photoId))
-                },
                 onToggleSeparateScreensMode = { enabled -> viewModel.setSeparateScreensMode(enabled) },
                 onSaveRule = { rule -> viewModel.saveScheduleRule(rule) },
                 onDeleteRule = { ruleId -> viewModel.deleteScheduleRule(ruleId) },
@@ -306,14 +305,6 @@ fun MainAppContent(viewModel: MainViewModel) {
                 onSetFallbackList = { scope, listId -> viewModel.setFallbackList(scope, listId) },
                 onCopyScheduleScope = { from, to -> viewModel.copyScheduleScope(from, to) },
                 onRefreshClock = { viewModel.refreshScheduleClock() },
-                onOpenAddPhotosFromAlbums = { listId ->
-                    viewModel.selectWorkingList(listId)
-                    selectedTab = 1
-                },
-                onOpenListInPreview = { listId ->
-                    viewModel.selectPreviewList(listId)
-                    selectedTab = 0
-                },
                 modifier = Modifier.padding(innerPadding)
             )
             3 -> SettingsScreen(

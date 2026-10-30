@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
@@ -61,6 +62,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,8 +78,12 @@ import coil.compose.AsyncImage
 import com.pereviader.backgroundswitcher.core.model.Album
 import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
+import com.pereviader.backgroundswitcher.core.model.RotationOrder
+import com.pereviader.backgroundswitcher.core.model.TargetScreen
 import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import com.pereviader.backgroundswitcher.ui.lists.AssignToListsDialog
+import com.pereviader.backgroundswitcher.ui.lists.CreateOrEditListDialog
+import com.pereviader.backgroundswitcher.ui.lists.ListPropertiesEditorScreen
 import kotlinx.coroutines.flow.Flow
 
 @Composable
@@ -106,6 +112,10 @@ fun AlbumSelectionScreen(
     onSetPhotoLists: (String, Set<String>) -> Unit = { _, _ -> },
     onSetAlbumLists: (String, Set<String>) -> Unit = { _, _ -> },
     onCreateList: (String, (WallpaperList) -> Unit) -> Unit = { _, _ -> },
+    onCreateListWithDetails: (String, TargetScreen, RotationOrder) -> Unit = { name, _, _ -> onCreateList(name) { _ -> } },
+    onUpdateList: (listId: String, newName: String, targetScreen: TargetScreen, rotationOrder: RotationOrder) -> Unit = { _, _, _, _ -> },
+    onDeleteList: (listId: String) -> Unit = {},
+    onOpenListInPreview: (listId: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -113,6 +123,34 @@ fun AlbumSelectionScreen(
     var selectedAlbumForDetails by remember { mutableStateOf<Album?>(null) }
     var albumToDelete by remember { mutableStateOf<Album?>(null) }
     var photoToAssignLists by remember { mutableStateOf<PhotoItem?>(null) }
+    var showCreateListDialog by remember { mutableStateOf(false) }
+    var editingListId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val editingList = lists.find { it.id == editingListId }
+
+    if (editingList != null) {
+        BackHandler(enabled = true) {
+            editingListId = null
+        }
+        ListPropertiesEditorScreen(
+            list = editingList,
+            onSave = { newName, screen, order ->
+                onUpdateList(editingList.id, newName, screen, order)
+                editingListId = null
+            },
+            onBack = { editingListId = null },
+            onPreview = {
+                editingListId = null
+                onOpenListInPreview(editingList.id)
+            },
+            onDelete = {
+                onDeleteList(editingList.id)
+                editingListId = null
+            },
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
 
     val driveFolderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -166,14 +204,15 @@ fun AlbumSelectionScreen(
             ) {
                 // Title at the top, matching Settings top position
                 Text(
-                    text = "Albums",
+                    text = "Lists",
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier
                         .padding(start = 16.dp, top = 16.dp, end = 16.dp)
                         .testTag("albums_title")
+                        .testTag("lists_title")
                 )
 
-                // Next line: Dropdown to select which list to edit + refresh button sharing the same line
+                // Next line: Dropdown to select which list to edit + create list (+) + edit list (pencil) + refresh button
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -189,6 +228,22 @@ fun AlbumSelectionScreen(
                             .weight(1f)
                             .testTag("working_list_dropdown")
                     )
+
+                    IconButton(
+                        onClick = { showCreateListDialog = true },
+                        modifier = Modifier.testTag("create_list_button")
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Create New List")
+                    }
+
+                    IconButton(
+                        onClick = { editingListId = workingListId },
+                        modifier = Modifier
+                            .testTag("edit_list_button")
+                            .testTag("list_edit_$workingListId")
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit List Properties")
+                    }
 
                     IconButton(
                         onClick = onRefresh,
@@ -301,8 +356,81 @@ fun AlbumSelectionScreen(
                 }
             )
         }
+
+        if (showCreateListDialog) {
+            CreateOrEditListDialog(
+                title = "Create New Photo List",
+                initialName = "",
+                confirmLabel = "Create",
+                onConfirm = { name, targetScreen, rotationOrder ->
+                    onCreateListWithDetails(name, targetScreen, rotationOrder)
+                    showCreateListDialog = false
+                },
+                onDismiss = { showCreateListDialog = false }
+            )
+        }
     }
 }
+
+/**
+ * Modern screen composable for the Lists tab (formerly AlbumSelectionScreen).
+ */
+@Composable
+fun ListsScreen(
+    albums: List<Album>,
+    onToggleAlbum: (String, Boolean) -> Unit,
+    onRefresh: () -> Unit,
+    onImportGoogleDriveFolder: (Uri) -> Unit = {},
+    onImportGooglePhotos: (List<Uri>) -> Unit = {},
+    onSyncAlbum: (String) -> Unit = {},
+    onDeleteAlbum: (String) -> Unit,
+    getPhotosForAlbum: (String) -> Flow<List<PhotoItem>>,
+    onTogglePhotoSelection: (photoId: String, isSelected: Boolean) -> Unit = { _, _ -> },
+    onOpenAlbumInPreview: (albumId: String, photoId: String?) -> Unit = { _, _ -> },
+    onImportGooglePhotosUrl: (String) -> Unit = {},
+    onSyncGooglePhotosAlbum: (String) -> Unit = onSyncAlbum,
+    lists: List<WallpaperList> = listOf(
+        WallpaperList(
+            id = WallpaperList.DEFAULT_LIST_ID,
+            name = WallpaperList.DEFAULT_LIST_NAME,
+            isDefault = true
+        )
+    ),
+    workingListId: String = WallpaperList.DEFAULT_LIST_ID,
+    onSelectWorkingList: (String) -> Unit = {},
+    onSetPhotoLists: (String, Set<String>) -> Unit = { _, _ -> },
+    onSetAlbumLists: (String, Set<String>) -> Unit = { _, _ -> },
+    onCreateList: (String, (WallpaperList) -> Unit) -> Unit = { _, _ -> },
+    onCreateListWithDetails: (String, TargetScreen, RotationOrder) -> Unit = { name, _, _ -> onCreateList(name) { _ -> } },
+    onUpdateList: (listId: String, newName: String, targetScreen: TargetScreen, rotationOrder: RotationOrder) -> Unit = { _, _, _, _ -> },
+    onDeleteList: (listId: String) -> Unit = {},
+    onOpenListInPreview: (listId: String) -> Unit = {},
+    modifier: Modifier = Modifier
+) = AlbumSelectionScreen(
+    albums = albums,
+    onToggleAlbum = onToggleAlbum,
+    onRefresh = onRefresh,
+    onImportGoogleDriveFolder = onImportGoogleDriveFolder,
+    onImportGooglePhotos = onImportGooglePhotos,
+    onSyncAlbum = onSyncAlbum,
+    onDeleteAlbum = onDeleteAlbum,
+    getPhotosForAlbum = getPhotosForAlbum,
+    onTogglePhotoSelection = onTogglePhotoSelection,
+    onOpenAlbumInPreview = onOpenAlbumInPreview,
+    onImportGooglePhotosUrl = onImportGooglePhotosUrl,
+    onSyncGooglePhotosAlbum = onSyncGooglePhotosAlbum,
+    lists = lists,
+    workingListId = workingListId,
+    onSelectWorkingList = onSelectWorkingList,
+    onSetPhotoLists = onSetPhotoLists,
+    onSetAlbumLists = onSetAlbumLists,
+    onCreateList = onCreateList,
+    onCreateListWithDetails = onCreateListWithDetails,
+    onUpdateList = onUpdateList,
+    onDeleteList = onDeleteList,
+    onOpenListInPreview = onOpenListInPreview,
+    modifier = modifier
+)
 
 @Composable
 fun WorkingListDropdown(

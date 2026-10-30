@@ -5,10 +5,15 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import com.google.common.truth.Truth.assertThat
 import com.pereviader.backgroundswitcher.core.model.Album
 import com.pereviader.backgroundswitcher.core.model.AlbumSource
 import com.pereviader.backgroundswitcher.core.model.PhotoItem
+import com.pereviader.backgroundswitcher.core.model.RotationOrder
+import com.pereviader.backgroundswitcher.core.model.TargetScreen
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
 import org.junit.Test
@@ -78,14 +83,14 @@ class AlbumSelectionScreenTest {
             )
         }
 
-        // Initially on albums page
-        composeTestRule.onNodeWithText("Albums").assertIsDisplayed()
+        // Initially on lists page
+        composeTestRule.onNodeWithText("Lists").assertIsDisplayed()
 
         // Click album card to open full screen album view
         composeTestRule.onNodeWithText("Nature").performClick()
 
         // Album list header is replaced by full screen album view
-        composeTestRule.onNodeWithText("Albums").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Lists").assertDoesNotExist()
         composeTestRule.onNodeWithTag("album_photos_fullscreen").assertIsDisplayed()
         composeTestRule.onNodeWithTag("album_photos_grid").assertIsDisplayed()
 
@@ -118,10 +123,10 @@ class AlbumSelectionScreenTest {
         composeTestRule.onNodeWithText("Select All").assertIsDisplayed()
         composeTestRule.onNodeWithText("Deselect All").assertIsDisplayed()
 
-        // Going back brings back to the album page
+        // Going back brings back to the lists page
         composeTestRule.onNodeWithText("Back").performClick()
         composeTestRule.onNodeWithTag("album_photos_fullscreen").assertDoesNotExist()
-        composeTestRule.onNodeWithText("Albums").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Lists").assertIsDisplayed()
         composeTestRule.onNodeWithText("Nature").assertIsDisplayed()
     }
 
@@ -274,15 +279,17 @@ class AlbumSelectionScreenTest {
             )
         }
 
-        // Title is displayed
+        // Title is displayed as Lists
         composeTestRule.onNodeWithTag("albums_title").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Albums").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Lists").assertIsDisplayed()
 
         // Description element is removed
         composeTestRule.onNodeWithText("Tap an album to view photos • Checkbox selects for cycling").assertDoesNotExist()
 
-        // Dropdown and refresh button are displayed
+        // Dropdown, + button, pencil button, and refresh button are displayed
         composeTestRule.onNodeWithTag("working_list_dropdown_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("create_list_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("edit_list_button").assertIsDisplayed()
         composeTestRule.onNodeWithTag("refresh_albums_button").assertIsDisplayed()
 
         // Refresh triggers callback
@@ -293,5 +300,165 @@ class AlbumSelectionScreenTest {
         composeTestRule.onNodeWithTag("working_list_dropdown_button").performClick()
         composeTestRule.onNodeWithTag("working_list_option_list_work").performClick()
         assertThat(selectedList).isEqualTo("list_work")
+    }
+
+    @Test
+    fun `plus button next to dropdown opens dialog to create list with details`() {
+        val defaultList = WallpaperList(
+            id = "default_list",
+            name = "My Wallpapers",
+            isDefault = true
+        )
+        var createdName: String? = null
+        var createdScreen: TargetScreen? = null
+        var createdOrder: RotationOrder? = null
+
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = listOf(sampleAlbum),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = {},
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { MutableStateFlow(emptyList()) },
+                lists = listOf(defaultList),
+                workingListId = defaultList.id,
+                onCreateListWithDetails = { name, screen, order ->
+                    createdName = name
+                    createdScreen = screen
+                    createdOrder = order
+                }
+            )
+        }
+
+        // Click + button next to dropdown
+        composeTestRule.onNodeWithTag("create_list_button").performClick()
+
+        // Create list dialog appears
+        composeTestRule.onNodeWithTag("list_name_input").performTextReplacement("Travel Highlights")
+        composeTestRule.onNodeWithTag("target_screen_chip_home").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("rotation_mode_chip_chronological").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("confirm_list_dialog_button").performClick()
+
+        assertThat(createdName).isEqualTo("Travel Highlights")
+        assertThat(createdScreen).isEqualTo(TargetScreen.HOME)
+        assertThat(createdOrder).isEqualTo(RotationOrder.CHRONOLOGICAL)
+    }
+
+    @Test
+    fun `pencil icon next to dropdown opens list properties editor and allows editing and saving`() {
+        val defaultList = WallpaperList(
+            id = "default_list",
+            name = "My Wallpapers",
+            isDefault = true
+        )
+        val workList = WallpaperList(
+            id = "list_work",
+            name = "Work Focus",
+            isDefault = false,
+            photoCount = 3
+        )
+        var updatedName: String? = null
+        var updatedScreen: TargetScreen? = null
+        var updatedOrder: RotationOrder? = null
+
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = listOf(sampleAlbum),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = {},
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { MutableStateFlow(emptyList()) },
+                lists = listOf(defaultList, workList),
+                workingListId = workList.id,
+                onUpdateList = { _, name, screen, order ->
+                    updatedName = name
+                    updatedScreen = screen
+                    updatedOrder = order
+                }
+            )
+        }
+
+        // Click pencil icon next to dropdown
+        composeTestRule.onNodeWithTag("edit_list_button").performClick()
+
+        // Fullscreen editor appears
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("list_name_input").performTextReplacement("Deep Work")
+        composeTestRule.onNodeWithTag("target_screen_chip_lock").performClick()
+        composeTestRule.onNodeWithTag("save_list_properties_button").performClick()
+
+        assertThat(updatedName).isEqualTo("Deep Work")
+        assertThat(updatedScreen).isEqualTo(TargetScreen.LOCK)
+
+        // Editor is closed, returns to lists screen
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Lists").assertIsDisplayed()
+    }
+
+    @Test
+    fun `deleting a list via list properties editor calls onDeleteList and closes editor`() {
+        val defaultList = WallpaperList(
+            id = "default_list",
+            name = "My Wallpapers",
+            isDefault = true
+        )
+        val workList = WallpaperList(
+            id = "list_work",
+            name = "Work Focus",
+            isDefault = false,
+            photoCount = 3
+        )
+        var deletedListId: String? = null
+
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = listOf(sampleAlbum),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = {},
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { MutableStateFlow(emptyList()) },
+                lists = listOf(defaultList, workList),
+                workingListId = workList.id,
+                onDeleteList = { deletedListId = it }
+            )
+        }
+
+        // Open editor via pencil icon
+        composeTestRule.onNodeWithTag("edit_list_button").performClick()
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
+
+        // Click Delete List button and confirm
+        composeTestRule.onNodeWithTag("list_delete_button").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("confirm_delete_list_button").performClick()
+
+        assertThat(deletedListId).isEqualTo("list_work")
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertDoesNotExist()
+    }
+
+    @Test
+    fun `default list does not display delete button in list properties editor`() {
+        val defaultList = WallpaperList(
+            id = "default_list",
+            name = "My Wallpapers",
+            isDefault = true
+        )
+
+        composeTestRule.setContent {
+            AlbumSelectionScreen(
+                albums = listOf(sampleAlbum),
+                onToggleAlbum = { _, _ -> },
+                onRefresh = {},
+                onDeleteAlbum = {},
+                getPhotosForAlbum = { MutableStateFlow(emptyList()) },
+                lists = listOf(defaultList),
+                workingListId = defaultList.id
+            )
+        }
+
+        // Open editor for default list via pencil icon
+        composeTestRule.onNodeWithTag("edit_list_button").performClick()
+        composeTestRule.onNodeWithTag("list_properties_editor_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Default List Properties").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("list_delete_button").assertDoesNotExist()
     }
 }
