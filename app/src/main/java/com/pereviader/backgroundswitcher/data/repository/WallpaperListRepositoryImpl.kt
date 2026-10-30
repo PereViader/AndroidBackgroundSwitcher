@@ -121,13 +121,28 @@ class WallpaperListRepositoryImpl @Inject constructor(
             createdAt = System.currentTimeMillis()
         )
         wallpaperListDao.insertListIgnore(entity)
+        if (wallpaperListDao.getPhotosCountInList(WallpaperList.DEFAULT_LIST_ID) == 0) {
+            val selectedPhotos = photoDao.getAllPhotos().filter { it.isSelected }
+            if (selectedPhotos.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                val refs = selectedPhotos.mapIndexed { idx, p ->
+                    ListPhotoCrossRef(
+                        listId = WallpaperList.DEFAULT_LIST_ID,
+                        photoId = p.id,
+                        addedAt = now + idx
+                    )
+                }
+                wallpaperListDao.insertCrossRefs(refs)
+            }
+        }
+        val count = wallpaperListDao.getPhotosCountInList(WallpaperList.DEFAULT_LIST_ID)
         return WallpaperList(
             id = entity.id,
             name = entity.name,
             isDefault = true,
             orderIndex = 0,
             createdAt = entity.createdAt,
-            photoCount = 0,
+            photoCount = count,
             targetScreen = parseTargetScreen(entity.targetScreen),
             rotationOrder = parseRotationOrder(entity.rotationOrder)
         )

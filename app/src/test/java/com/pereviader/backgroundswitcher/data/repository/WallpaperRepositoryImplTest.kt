@@ -10,6 +10,8 @@ import com.pereviader.backgroundswitcher.core.wallpaper.WallpaperManagerHelper
 import com.pereviader.backgroundswitcher.data.local.datastore.PreferencesManager
 import com.pereviader.backgroundswitcher.data.local.db.dao.PhotoDao
 import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperCustomizationDao
+import com.pereviader.backgroundswitcher.data.local.db.dao.WallpaperListDao
+import com.pereviader.backgroundswitcher.core.model.WallpaperList
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperCustomizationEntity
 import io.mockk.coEvery
@@ -138,6 +140,44 @@ class WallpaperRepositoryImplTest {
             wallpaperCustomizationDao.insertOrUpdate(
                 match {
                     it.imageUri == "content://media/external/images/media/42" && !it.isSelected
+                }
+            )
+        }
+    }
+
+    @Test
+    fun `togglePhotoSelection with false and listDao deletes only default list cross ref without clearing other lists`() = runTest {
+        val listDao = mockk<WallpaperListDao>(relaxed = true)
+        val repoWithListDao = WallpaperRepositoryImpl(
+            context = context,
+            preferencesManager = preferencesManager,
+            photoDao = photoDao,
+            wallpaperCustomizationDao = wallpaperCustomizationDao,
+            wallpaperManagerHelper = wallpaperManagerHelper,
+            imageLoader = imageLoader,
+            wallpaperListDao = listDao
+        )
+
+        val photo = PhotoEntity(
+            id = "photo_1",
+            albumId = "album_1",
+            uri = "content://media/external/images/media/42",
+            isSelected = true
+        )
+        coEvery { photoDao.getPhotoById("photo_1") } returns photo
+        coEvery { listDao.getListIdsForPhoto("photo_1") } returns listOf("custom_list_1")
+        coEvery { wallpaperCustomizationDao.getCustomization("content://media/external/images/media/42") } returns null
+
+        repoWithListDao.togglePhotoSelection("photo_1", false)
+
+        coVerify { listDao.deleteCrossRef(WallpaperList.DEFAULT_LIST_ID, "photo_1") }
+        coVerify(exactly = 0) { listDao.deleteAllCrossRefsForPhoto(any()) }
+        // Photo still belongs to custom_list_1, so it should still be marked selected
+        coVerify { photoDao.updatePhotoSelection("photo_1", true) }
+        coVerify {
+            wallpaperCustomizationDao.insertOrUpdate(
+                match {
+                    it.imageUri == "content://media/external/images/media/42" && it.isSelected
                 }
             )
         }

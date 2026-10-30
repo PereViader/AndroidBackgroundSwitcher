@@ -93,6 +93,24 @@ class WallpaperListAndScheduleDaoTest {
     }
 
     @Test
+    fun `insertOrUpdateAll does not delete cross refs when updating photo`() = runTest {
+        val album = AlbumEntity(id = "a1", name = "Album 1", coverUri = null, photoCount = 1, source = "LOCAL", isSelected = true)
+        albumDao.insertOrUpdate(album)
+        val p1 = PhotoEntity(id = "p1", albumId = "a1", uri = "content://1", dateAdded = 100L)
+        photoDao.insertOrUpdateAll(listOf(p1))
+        val listWork = WallpaperListEntity(id = "list_work", name = "Work", isDefault = false, createdAt = 1000L)
+        listDao.insertList(listWork)
+        listDao.insertCrossRefs(listOf(ListPhotoCrossRef(listId = "list_work", photoId = "p1", addedAt = 100L)))
+        assertThat(listDao.getPhotosCountInList("list_work")).isEqualTo(1)
+
+        // Now simulate what refreshDeviceAlbums, syncAllSelectedAlbums, or toggleAlbumSelection does:
+        photoDao.insertOrUpdateAll(listOf(p1.copy(lastDisplayedAt = 500L)))
+
+        // Verify if list_work still has p1!
+        assertThat(listDao.getPhotosCountInList("list_work")).isEqualTo(1)
+    }
+
+    @Test
     fun `PhotoDao list-scoped candidate queries only select photos belonging to target list`() = runTest {
         val album = AlbumEntity(id = "a1", name = "Album 1", coverUri = null, photoCount = 3, source = "LOCAL", isSelected = true)
         albumDao.insertOrUpdate(album)

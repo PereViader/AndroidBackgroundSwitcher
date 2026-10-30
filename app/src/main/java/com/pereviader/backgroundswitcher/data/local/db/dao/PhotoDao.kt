@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -186,7 +187,7 @@ interface PhotoDao {
     @Query("SELECT COUNT(*) FROM photos WHERE albumId = :albumId AND isSelected = 1")
     suspend fun getSelectedPhotosCountByAlbum(albumId: String): Int
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertOrUpdateAll(photos: List<PhotoEntity>)
 
     @Query("UPDATE photos SET lastDisplayedAt = :timestamp WHERE id = :id")

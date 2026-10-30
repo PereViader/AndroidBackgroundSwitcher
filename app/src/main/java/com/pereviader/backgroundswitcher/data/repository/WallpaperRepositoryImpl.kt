@@ -328,7 +328,6 @@ class WallpaperRepositoryImpl @Inject constructor(
 
     override suspend fun togglePhotoSelection(photoId: String, isSelected: Boolean) = withContext(Dispatchers.IO) {
         val photo = photoDao.getPhotoById(photoId) ?: return@withContext
-        photoDao.updatePhotoSelection(photoId, isSelected)
         wallpaperListDao?.let { listDao ->
             listDao.insertListIgnore(
                 WallpaperListEntity(
@@ -347,25 +346,46 @@ class WallpaperRepositoryImpl @Inject constructor(
                     )
                 )
             } else {
-                listDao.deleteAllCrossRefsForPhoto(photoId)
+                listDao.deleteCrossRef(WallpaperList.DEFAULT_LIST_ID, photoId)
             }
-        }
-        val uri = photo.uri
-        val customization = wallpaperCustomizationDao.getCustomization(uri)
-        val cropX = customization?.cropX ?: photo.cropX
-        val cropY = customization?.cropY ?: photo.cropY
-        val zoom = customization?.zoom ?: photo.zoom
+            val remainingLists = listDao.getListIdsForPhoto(photoId)
+            val stillSelected = remainingLists.isNotEmpty()
+            photoDao.updatePhotoSelection(photoId, stillSelected)
 
-        wallpaperCustomizationDao.insertOrUpdate(
-            WallpaperCustomizationEntity(
-                imageUri = uri,
-                cropX = cropX,
-                cropY = cropY,
-                zoom = zoom,
-                isSelected = isSelected,
-                updatedAt = System.currentTimeMillis()
+            val uri = photo.uri
+            val customization = wallpaperCustomizationDao.getCustomization(uri)
+            val cropX = customization?.cropX ?: photo.cropX
+            val cropY = customization?.cropY ?: photo.cropY
+            val zoom = customization?.zoom ?: photo.zoom
+            wallpaperCustomizationDao.insertOrUpdate(
+                WallpaperCustomizationEntity(
+                    imageUri = uri,
+                    cropX = cropX,
+                    cropY = cropY,
+                    zoom = zoom,
+                    isSelected = stillSelected,
+                    updatedAt = System.currentTimeMillis()
+                )
             )
-        )
+        } ?: run {
+            photoDao.updatePhotoSelection(photoId, isSelected)
+            val uri = photo.uri
+            val customization = wallpaperCustomizationDao.getCustomization(uri)
+            val cropX = customization?.cropX ?: photo.cropX
+            val cropY = customization?.cropY ?: photo.cropY
+            val zoom = customization?.zoom ?: photo.zoom
+
+            wallpaperCustomizationDao.insertOrUpdate(
+                WallpaperCustomizationEntity(
+                    imageUri = uri,
+                    cropX = cropX,
+                    cropY = cropY,
+                    zoom = zoom,
+                    isSelected = isSelected,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
     }
 
     override suspend fun togglePhotoEnabled(photoId: String, isEnabled: Boolean) {

@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import com.pereviader.backgroundswitcher.data.local.db.entity.ListPhotoCrossRef
 import com.pereviader.backgroundswitcher.data.local.db.entity.PhotoEntity
 import com.pereviader.backgroundswitcher.data.local.db.entity.WallpaperListEntity
@@ -25,7 +26,7 @@ interface WallpaperListDao {
     @Query("SELECT * FROM wallpaper_lists WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefaultList(): WallpaperListEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertList(list: WallpaperListEntity)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
