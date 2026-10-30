@@ -288,6 +288,8 @@ class AlbumSelectionScreenTest {
 
         // Dropdown, + button, pencil button, and refresh button are displayed
         composeTestRule.onNodeWithTag("working_list_dropdown_button").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Editing list:").assertDoesNotExist()
+        composeTestRule.onNodeWithText("My Wallpapers").assertIsDisplayed()
         composeTestRule.onNodeWithTag("create_list_button").assertIsDisplayed()
         composeTestRule.onNodeWithTag("edit_list_button").assertIsDisplayed()
         composeTestRule.onNodeWithTag("refresh_albums_button").assertIsDisplayed()
